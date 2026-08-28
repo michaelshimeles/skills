@@ -53,7 +53,7 @@ Use it when greploop's trigger gets "Too many files changed for review".
 
 > Local variant derived from greptileai's greploop (MIT — license included in the folder); no separate upstream.
 
-### [worktree](worktree/SKILL.md)
+### [new-feature](new-feature/SKILL.md)
 
 Starts every new task in an isolated Git worktree branched from `origin/main` — unique task naming, a scope check against open PRs, fresh dependency installs, and cleanup after merge — so multiple agents can work on the same repo in parallel without conflicts.
 
@@ -67,7 +67,7 @@ Includes harness deltas for Claude Code and Cursor, which manage worktrees thems
 
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow — isolate (`worktree`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`). Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
+[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow — isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`). Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
 
 ## Installation
 

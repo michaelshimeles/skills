@@ -1,9 +1,9 @@
 ---
-name: worktree
+name: new-feature
 description: Start a new task in an isolated Git worktree branched from origin/main so multiple agents can work on the same repo in parallel without conflicts. Use at the beginning of every new feature, fix, or task — before writing any code.
 ---
 
-# Worktree
+# New Feature
 
 Every task gets its own worktree and branch, created from the latest
 `origin/main`. Never build on `main`, and never reuse another agent's
