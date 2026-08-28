@@ -25,6 +25,18 @@ Use it whenever a UI change needs verifiable evidence that it works, instead of 
 
 > Requires a GUI environment with screen recording, an authenticated browser session for the app under test, and the `gh` CLI (or equivalent) for posting evidence.
 
+### [worktree](worktree/SKILL.md)
+
+Starts every new task in an isolated Git worktree branched from `origin/main` — unique task naming, a scope check against open PRs, fresh dependency installs, and cleanup after merge — so multiple agents can work on the same repo in parallel without conflicts.
+
+Use it when:
+
+- Starting any new feature, fix, or task, before writing code
+- Multiple agents (or sessions) work the same repository concurrently
+- You need a consistent branch-per-task convention with safe cleanup
+
+Includes harness deltas for Claude Code and Cursor, which manage worktrees themselves.
+
 ## Installation
 
 Clone the repo and copy (or symlink) a skill folder into your skills directory:
