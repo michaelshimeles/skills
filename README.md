@@ -37,6 +37,10 @@ Use it when:
 
 Includes harness deltas for Claude Code and Cursor, which manage worktrees themselves.
 
+## Workflow
+
+[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow — isolate (`worktree`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`). Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
+
 ## Installation
 
 Clone the repo and copy (or symlink) a skill folder into your skills directory:
