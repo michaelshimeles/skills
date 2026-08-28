@@ -117,8 +117,10 @@ swap the recorder for scripted capture:
 ## Capture hygiene
 
 - Confirm the server you're probing is running *your* code (right port,
-  right process — `lsof -i :<port>`), especially when multiple agents share
-  a machine.
+  right process), especially when multiple agents share a machine:
+  `lsof -i :<port>` — or where `lsof` isn't installed,
+  `ss -ltnp "sport = :<port>"` to find the listener's PID, then
+  `ps -p <pid> -o args=` to confirm it's yours.
 - Evidence complements the repo's checks (typecheck/build/tests); it never
   replaces them.
 - Hand before/after media pairs to a before/after tool for the PR embed
