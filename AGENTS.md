@@ -83,5 +83,6 @@ infrastructure (stubs, fixtures), and anything that can't be tested locally.
 | Skill | Source |
 |---|---|
 | `worktree`, `code-structure`, `evidence-driven-testing` | this repo |
-| `before-and-after` | `npx skills add vercel-labs/before-and-after` |
-| `greploop`, `greploop-apps` | [greptileai](https://github.com/greptileai) skills, user-level (e.g. `~/.claude/skills/`) |
+| `before-and-after` | this repo, vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (or `npx skills add vercel-labs/before-and-after`) |
+| `greploop` | this repo, vendored from [greptileai/skills](https://github.com/greptileai/skills) |
+| `greploop-apps` | this repo (local variant of greploop for huge PRs; no separate upstream) |

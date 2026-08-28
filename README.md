@@ -4,6 +4,18 @@ A collection of [agent skills](https://code.claude.com/docs/en/skills) for Claud
 
 ## Available Skills
 
+### [before-and-after](before-and-after/SKILL.md)
+
+Captures before/after screenshots of web pages or elements and outputs a PR-ready markdown comparison table, driving the `@vercel/before-and-after` CLI.
+
+Use it when:
+
+- A PR needs visual proof that a UI change does what it claims
+- You want a `| Before | After |` table generated and uploaded in one step
+- Comparing two URLs, two existing images, or a mix of both
+
+> Vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (PolyForm Shield 1.0.0 — license included in the folder). Install the CLI with `npm i -g @vercel/before-and-after agent-browser`.
+
 ### [code-structure](code-structure/SKILL.md)
 
 Service layer architecture guidance. Enforces a two-layer separation where **actions** orchestrate domain rules (the "why/when") and a **service layer** centralizes reusable operational mechanics (the "how").
@@ -24,6 +36,22 @@ Records visual proof while testing UI behavior — screen recording with structu
 Use it whenever a UI change needs verifiable evidence that it works, instead of prose claims.
 
 > Requires a GUI environment with screen recording, an authenticated browser session for the app under test, and the `gh` CLI (or equivalent) for posting evidence.
+
+### [greploop](greploop/SKILL.md)
+
+Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats (max 5 iterations).
+
+Use it when a PR should be fully optimized against Greptile's code review standards before merge.
+
+> Vendored from [greptileai/skills](https://github.com/greptileai/skills) (MIT — license included in the folder). Requires Greptile installed on the repo and an authenticated `gh`/`glab`/`p4` CLI.
+
+### [greploop-apps](greploop-apps/SKILL.md)
+
+Identical loop to greploop, but triggers reviews by tagging `@greptile-apps`, which bypasses Greptile's file-count limit on huge PRs that the plain `@greptile` mention refuses to review — including a fallback that polls Greptile's edited summary comment when no check run appears.
+
+Use it when greploop's trigger gets "Too many files changed for review".
+
+> Local variant derived from greptileai's greploop (MIT — license included in the folder); no separate upstream.
 
 ### [worktree](worktree/SKILL.md)
 
