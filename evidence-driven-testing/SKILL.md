@@ -72,9 +72,31 @@ swap the recorder for scripted capture:
   captures URLs or elements and its pairs feed PR embeds directly. In
   containers/VMs where Chrome fails with "No usable sandbox", set
   `AGENT_BROWSER_ARGS="--no-sandbox"`.
-- **Video / multi-step flows**: a one-off Playwright script via npx
-  (`recordVideo` on the browser context); trim or compress with ffmpeg if
-  large. Don't add playwright to the project's dependencies for this.
+- **Video / multi-step flows**: a one-off Playwright script, run without
+  adding playwright to the project's dependencies:
+
+  ```bash
+  npx --yes --package=playwright node record.mjs
+  ```
+
+  (Plain `npx playwright node record.mjs` fails — `node` is not a Playwright
+  CLI command; `--package=playwright` is what puts the module on the path.)
+  Minimal `record.mjs`:
+
+  ```js
+  import { chromium } from "playwright";
+  const browser = await chromium.launch();
+  const context = await browser.newContext({
+    recordVideo: { dir: ".artifacts/<task-name>/" },
+  });
+  const page = await context.newPage();
+  await page.goto("http://localhost:3000/path-under-test");
+  // ...drive the flow, one meaningful state change per step...
+  await context.close(); // finalizes the .webm
+  await browser.close();
+  ```
+
+  Trim or compress with ffmpeg if the file is large.
 - **The annotation protocol becomes files**: number captures in test order
   with the assertion in the name — `01-precondition-signed-in.png`,
   `02-it-saves-on-blur-passed.png` — and keep an `assertions.md` in the
