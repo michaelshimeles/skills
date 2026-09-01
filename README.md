@@ -31,11 +31,11 @@ Includes a migration checklist for extracting shared logic safely and a table of
 
 ### [evidence-driven-testing](evidence-driven-testing/SKILL.md)
 
-Records visual proof while testing UI behavior — screen recording with structured test/assertion annotations — then posts the video and a results summary to the PR and tracker issue.
+Records visual proof while testing UI behavior — the agent drives the app live via computer use (or [cua-driver](https://github.com/trycua/cua) when the harness has no computer-use tools) while the bundled recorder captures the session — then posts the video and a results summary to the PR and tracker issue. The recorder (`scripts/evidence.py`, Python 3 + FFmpeg) runs on Linux, macOS, and Windows and has `doctor`, `start`, `annotate`, and `stop` commands: annotations are timestamped as the agent tests, burned into `evidence.mp4` on stop, and summarized in a generated `report.md` and `manifest.json`. Headless environments swap the recorder for scripted screenshots and Playwright captures; non-UI changes still get evidence (measured numbers, output pairs, transcript excerpts).
 
-Use it whenever a UI change needs verifiable evidence that it works, instead of prose claims.
+Use it whenever a change needs verifiable evidence that it works, instead of prose claims.
 
-> Requires a GUI environment with screen recording, an authenticated browser session for the app under test, and the `gh` CLI (or equivalent) for posting evidence.
+> The recorder needs `ffmpeg`/`ffprobe` built with `libx264` and the `ass` filter, plus a screen-capture source: X11 (`DISPLAY`) or wlroots Wayland (`wf-recorder`; GNOME/KDE are not supported) on Linux, Screen Recording permission on macOS, any standard ffmpeg on Windows. `python3 scripts/evidence.py doctor` reports both. The raw capture is MPEG-TS, so a crashed or hard-killed recorder still yields usable evidence. The headless path needs only a running app and a scriptable browser (Playwright via npx). Posting evidence requires the `gh` CLI (or equivalent). `tests/test_evidence.py` smoke-tests the recorder end to end with a synthetic video source (`python3 -m pytest tests/ -q`).
 
 ### [greploop](greploop/SKILL.md)
 
