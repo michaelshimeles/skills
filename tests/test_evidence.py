@@ -763,3 +763,61 @@ def test_supervisor_lost_before_identity_is_not_a_confirmed_stop(tmp_path: Path,
     finalized = json.loads(session_path.read_text())
     assert finalized["status"] == "finalized" and finalized["untracked_recorder_accepted_at"]
     assert "never recorded" in (tmp_path / "report.md").read_text()
+
+
+def test_supervised_startup_failure_is_recoverable_through_recorder_lost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Simulate `start` failing to see the supervisor it just launched, while that supervisor really runs."""
+    monkeypatch.setenv("EVIDENCE_PLATFORM", "darwin")  # both this process and the spawned supervisor
+    spawned: dict[str, int] = {}
+    real_spawn = EVIDENCE.spawn_detached
+
+    def spawn(command, log_file, env):
+        process = real_spawn(command, log_file, env)
+        spawned["pid"] = process.pid
+        return process
+
+    real_identity = EVIDENCE.process_identity
+    monkeypatch.setattr(EVIDENCE, "spawn_detached", spawn)
+    monkeypatch.setattr(EVIDENCE, "process_identity", lambda pid: None if pid == spawned.get("pid") else real_identity(pid))
+
+    with pytest.raises(EVIDENCE.EvidenceError, match="supervisor exited before its identity"):
+        EVIDENCE.command_start(_start_args("test", output=str(tmp_path), geometry="320x180"))
+    session_path = next(tmp_path.glob("evidence-*/session.json"))
+    session = json.loads(session_path.read_text())
+    assert session["status"] == "recorder_lost", "a supervised startup failure must land in the recoverable state"
+    assert session["supervisor_identity"] is None
+
+    # Meanwhile the real supervisor is alive and its recorder is writing. Give it a moment...
+    time.sleep(1.5)
+    monkeypatch.setattr(EVIDENCE, "process_identity", real_identity)
+    live = json.loads(session_path.read_text())
+    assert live["recorder_identity"] and EVIDENCE.identity_alive(live["recorder_identity"])
+
+    # ...then repair the record so the supervisor is recognised, exactly as an operator
+    # would after `ps`, and let `stop` recover through the supervisor rather than by PID.
+    with EVIDENCE.session_lock(session_path):
+        live = json.loads(session_path.read_text())
+        live["supervisor_identity"] = real_identity(spawned["pid"])
+        EVIDENCE.atomic_write_json(session_path, live)
+    assert EVIDENCE.finalize_session(session_path) == 0
+    final = json.loads(session_path.read_text())
+    assert final["status"] == "finalized"
+    assert json.loads((session_path.parent / "recorder-exit.json").read_text())["requested"] is True
+    assert not EVIDENCE.identity_alive(live["recorder_identity"])
+
+
+def test_supervised_startup_failure_without_any_recorder_stays_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("EVIDENCE_PLATFORM", "darwin")
+    # A supervisor that dies instantly, before launching anything.
+    monkeypatch.setattr(
+        EVIDENCE, "spawn_detached", lambda command, log_file, env: subprocess.Popen([sys.executable, "-c", "pass"])
+    )
+    with pytest.raises(EVIDENCE.EvidenceError, match="supervisor exited"):
+        EVIDENCE.command_start(_start_args("test", output=str(tmp_path), geometry="320x180"))
+    session_path = next(tmp_path.glob("evidence-*/session.json"))
+    assert json.loads(session_path.read_text())["status"] == "recorder_lost"
+    with pytest.raises(EVIDENCE.EvidenceError, match="--accept-untracked-recorder"):
+        EVIDENCE.finalize_session(session_path)
+    with pytest.raises(EVIDENCE.EvidenceError, match="ffprobe failed|recording has no video stream|duration is not positive"):
+        EVIDENCE.finalize_session(session_path, accept_untracked=True)  # nothing was ever recorded
+    assert json.loads(session_path.read_text())["status"] == "finalization_failed"

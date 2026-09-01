@@ -875,14 +875,19 @@ def command_start(args: argparse.Namespace) -> int:
             current["supervisor_identity"] = supervisor_identity
             current["started_epoch"] = session["started_epoch"]
             atomic_write_json(session_path, current)
+        # Supervised startup failures are persisted as recorder_lost, not startup_failed:
+        # the supervisor may have launched a recorder we cannot see, and recorder_lost
+        # is the state whose recovery flow knows how to confirm or refuse that safely.
         if supervisor_identity is None:
-            _mark_startup_failed(session_path, "supervisor exited before its identity could be captured")
+            _mark_startup_failed(
+                session_path, "supervisor exited before its identity could be captured", status="recorder_lost"
+            )
         try:
             session = wait_for_supervised_recorder(session_path, supervisor_identity, raw_video)
         except EvidenceError as error:
             with contextlib.suppress(EvidenceError):
                 stop_supervised(load_session(session_path), session_dir, timeout_seconds=10.0)
-            _mark_startup_failed(session_path, str(error))
+            _mark_startup_failed(session_path, str(error), status="recorder_lost")
         print(json.dumps({"session": str(session_path), "pid": session["recorder_pid"], "source": source, "mode": "supervised"}))
         return 0
 
@@ -909,10 +914,12 @@ def command_start(args: argparse.Namespace) -> int:
     return 0
 
 
-def _mark_startup_failed(session_path: Path, failure: str, stop_failure: str | None = None) -> None:
+def _mark_startup_failed(
+    session_path: Path, failure: str, stop_failure: str | None = None, status: str = "startup_failed"
+) -> None:
     with session_lock(session_path):
         session = load_session(session_path)
-        session["status"] = "startup_failed"
+        session["status"] = status
         session["failed_at"] = utc_now()
         session["failure"] = failure
         if stop_failure:
@@ -1178,6 +1185,11 @@ def finalize_session(session_path: Path, accept_untracked: bool = False) -> int:
         # Only finalize once the original recorder is confirmed gone. If the same
         # process is still alive it may still be writing the raw capture, and
         # rendering now would publish truncated evidence.
+        if session.get("mode") == "supervised" and identity_alive(session.get("supervisor_identity")):
+            # The supervisor is still there (e.g. start gave up on it too early): it owns
+            # the recorder, so ask it to stop rather than reasoning about PIDs ourselves.
+            stop_supervised(session, session_path.parent)
+            session = load_session(session_path)
         identity = session.get("recorder_identity")
         if isinstance(identity, dict):
             current = process_identity(int(identity["pid"]))
