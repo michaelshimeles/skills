@@ -131,7 +131,10 @@ Python 3 and FFmpeg.
   probes the result, and writes `report.md` and `manifest.json` next to it.
   It prints `"verified": true` on success; if rendering fails the session is
   marked `finalization_failed` — fix the reported cause and run `stop` again
-  (a retry does not signal the recorder twice).
+  (a retry does not signal the recorder twice). If the recorder process can no
+  longer be signalled safely (it died, or its PID now belongs to another
+  process), the session is marked `recorder_lost`; running `stop` again skips
+  the signal and finalizes whatever video was captured.
 - Confirm the recording captured the key moments before sharing: extract a
   frame at each assertion timestamp (`ffmpeg -ss <t> -i evidence.mp4
   -frames:v 1 frame.png`) and check the state and the label are visible.

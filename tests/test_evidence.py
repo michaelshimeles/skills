@@ -166,6 +166,63 @@ def test_finalization_failure_is_recorded_and_retryable(
     assert attempts == 2
 
 
+def test_stop_marks_session_recorder_lost_on_identity_mismatch_and_finalizes_on_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    identity = EVIDENCE.process_identity(os.getpid())
+    assert identity is not None
+    stale = dict(identity)
+    stale["start_time_ticks"] += 1
+    raw_video = tmp_path / "raw.mp4"
+    raw_video.write_bytes(b"raw")
+    session_path = tmp_path / "session.json"
+    EVIDENCE.atomic_write_json(
+        session_path,
+        {
+            "status": "recording",
+            "title": "Recorder lost",
+            "commit": "abc123",
+            "branch": "feature/recorder-lost",
+            "environment": "test",
+            "raw_video": str(raw_video),
+            "recorder_identity": stale,
+            "annotations": [],
+        },
+    )
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        EVIDENCE.signal,
+        "pidfd_send_signal",
+        lambda pidfd, sig: signals.append((pidfd, sig)),
+    )
+    args = argparse.Namespace(session=str(session_path))
+
+    with pytest.raises(EVIDENCE.EvidenceError, match="recorder_lost"):
+        EVIDENCE.command_stop(args)
+    assert signals == []
+    lost = json.loads(session_path.read_text())
+    assert lost["status"] == "recorder_lost"
+    assert "identity does not match" in lost["failure"]
+    assert "failed_at" in lost
+
+    verification = {
+        "duration_seconds": 1.0,
+        "codec": "h264",
+        "width": 320,
+        "height": 180,
+        "size_bytes": 3,
+    }
+    monkeypatch.setattr(EVIDENCE, "probe_video", lambda _path: verification)
+    monkeypatch.setattr(EVIDENCE, "write_annotations", lambda *_args: None)
+    monkeypatch.setattr(EVIDENCE, "render_video", lambda *_args: None)
+
+    assert EVIDENCE.command_stop(args) == 0
+    assert signals == []
+    finalized = json.loads(session_path.read_text())
+    assert finalized["status"] == "finalized"
+    assert "failure" not in finalized
+
+
 def test_stop_refuses_to_signal_a_reused_or_tampered_pid(monkeypatch: pytest.MonkeyPatch):
     identity = EVIDENCE.process_identity(os.getpid())
     assert identity is not None

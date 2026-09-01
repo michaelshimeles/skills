@@ -491,15 +491,28 @@ def command_stop(args: argparse.Namespace) -> int:
     session = load_session(session_path)
     status = session.get("status")
     if status == "recording":
-        identity = session.get("recorder_identity")
-        if not isinstance(identity, dict):
-            raise EvidenceError("session has no validated recorder identity; refusing to signal a PID")
-        stop_recorder(identity)
+        try:
+            identity = session.get("recorder_identity")
+            if not isinstance(identity, dict):
+                raise EvidenceError("session has no validated recorder identity; refusing to signal a PID")
+            stop_recorder(identity)
+        except EvidenceError as error:
+            # The recorder can no longer be signalled safely (PID reused, identity
+            # missing, or it survived SIGKILL). Persist that instead of leaving the
+            # session stuck in "recording"; a later `stop` skips the signal and
+            # finalizes whatever the recorder managed to write.
+            session["status"] = "recorder_lost"
+            session["failed_at"] = utc_now()
+            session["failure"] = str(error)
+            atomic_write_json(session_path, session)
+            raise EvidenceError(
+                f"{error}; session marked recorder_lost — run `stop` again to finalize the captured video"
+            ) from error
         session["status"] = "recorded"
         session["stopped_at"] = utc_now()
         session.pop("failure", None)
         atomic_write_json(session_path, session)
-    elif status not in ("recorded", "finalizing", "finalization_failed"):
+    elif status not in ("recorded", "recorder_lost", "finalizing", "finalization_failed"):
         raise EvidenceError(f"session cannot be finalized (status: {status})")
 
     session["status"] = "finalizing"
