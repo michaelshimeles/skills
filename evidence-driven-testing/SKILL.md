@@ -8,7 +8,7 @@ description: >
   verifiable evidence that it works, instead of prose claims — including
   headless environments (scripted screenshots and probes) and non-UI changes
   (measured numbers, output pairs).
-compatibility: Screen-recording path requires a GUI environment with computer-use control of the app and an authenticated browser session for the app under test; the headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
+compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test; the headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
 metadata:
   version: "1.0"
 ---
@@ -21,6 +21,8 @@ The recording is the capture of you testing the app via computer use: start the
 recorder, then drive the app yourself — click, type, navigate — through each
 test target. Every action in the video is the test being performed live; the
 recording has no value as evidence unless it shows that interactive session.
+If the harness has no computer-use tools but a GUI exists, drive the app with
+`cua-driver` instead (see below) — it is still your live session.
 
 ## Inputs
 
@@ -67,12 +69,41 @@ recording has no value as evidence unless it shows that interactive session.
 
 ## Guardrails
 
-- The video must show the actual computer-use test session. Never present
+- The video must show the actual test session being driven live. Never present
   scripted playback, stitched clips, or synthetic footage as a recording; if
-  there is no GUI to drive, use the headless path instead.
+  the harness lacks computer-use tools but a GUI exists, drive via
+  `cua-driver`; with no GUI at all, use the headless path instead.
 - Never record a half-covered or tiled window — maximize first.
 - When verifying a fix, show or reference the old failure alongside the new success.
 - Always state the exact commit/branch/deployment tested against.
+
+## No computer-use tools? Drive with cua-driver (GUI available)
+
+When a display exists but the agent has no built-in computer-use capability,
+use [cua-driver](https://github.com/trycua/cua) (macOS / Windows / Linux) as
+the actuator. It is still you testing the app live — the recording rule holds
+unchanged; only the input mechanism differs.
+
+- Verify the setup with `cua-driver doctor` before recording. If a
+  `cua-driver` skill is installed, read it and follow its protocol — the
+  snapshot-before-action invariant is mandatory.
+- Loop per interaction: `launch_app` → `get_window_state` (accessibility tree
+  + screenshot) → act via `element_token` (`click`, `type_text`, `press_key`)
+  → `verify_state` for the expected postcondition. Each `verify_state` check
+  maps 1:1 onto an `assertion` annotation.
+- `cua-driver recording start <output-dir>` / `cua-driver recording stop` can
+  double as the recorder (the output directory is required, and the daemon
+  must be running: `cua-driver serve`). Video capture is on by default and is
+  finalized to `<output-dir>/recording.mp4` on stop — but on Windows/Linux it
+  shells out to ffmpeg, so a missing ffmpeg or display yields only the
+  per-turn trajectory folders (before/after screenshots, `action.json`,
+  `click.png`), no video. After stopping, verify `recording.mp4` exists
+  before citing it; if it is absent, fix the recorder or present the
+  per-turn before/after screenshots as numbered captures per the headless
+  protocol.
+- If no annotation overlay is available on this path, keep the protocol as
+  files: an `assertions.md` listing each `test_start` / `assertion` with its
+  result, exactly as in the headless path.
 
 ## Headless path (no GUI available)
 
