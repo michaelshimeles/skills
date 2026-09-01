@@ -1,12 +1,14 @@
 ---
 name: evidence-driven-testing
 description: >
-  Records visual proof while testing UI behavior — screen recording with structured
-  test/assertion annotations — then posts the video and a results summary to the PR
-  and tracker issue. Use whenever a change needs verifiable evidence that it works,
-  instead of prose claims — including headless environments (scripted screenshots
-  and probes) and non-UI changes (measured numbers, output pairs).
-compatibility: Screen-recording path requires a GUI environment and an authenticated browser session for the app under test; the headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
+  Records visual proof while testing UI behavior — the agent tests the app
+  hands-on via computer use while a screen recording with structured
+  test/assertion annotations captures the session — then posts the video and a
+  results summary to the PR and tracker issue. Use whenever a change needs
+  verifiable evidence that it works, instead of prose claims — including
+  headless environments (scripted screenshots and probes) and non-UI changes
+  (measured numbers, output pairs).
+compatibility: Screen-recording path requires a GUI environment with computer-use control of the app and an authenticated browser session for the app under test; the headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
 metadata:
   version: "1.0"
 ---
@@ -14,6 +16,11 @@ metadata:
 # Evidence-Driven Testing
 
 Record annotated proof of behavior, then attach it to the PR and tracker issue.
+
+The recording is the capture of you testing the app via computer use: start the
+recorder, then drive the app yourself — click, type, navigate — through each
+test target. Every action in the video is the test being performed live; the
+recording has no value as evidence unless it shows that interactive session.
 
 ## Inputs
 
@@ -32,8 +39,12 @@ Record annotated proof of behavior, then attach it to the PR and tracker issue.
 - Begin the screen recording before the first meaningful action.
 - Add a `setup` annotation describing the starting context, e.g. "Logged in, navigating to connectors page".
 
-### 3. Annotate as you test
+### 3. Test via computer use, annotating as you go
 
+- Perform every interaction through computer use on the live app — the
+  recording captures your session, so the testing and the evidence are the
+  same act. Work at a watchable pace: let the UI settle after each action so
+  state changes are visible on video.
 - At each named test's start, add a `test_start` annotation in Jest style: `It should execute the tool directly when permission is 'always'`.
 - After each check, add an `assertion` annotation with result `passed`, `failed`, or `untested`.
 - Rules for assertions:
@@ -56,6 +67,9 @@ Record annotated proof of behavior, then attach it to the PR and tracker issue.
 
 ## Guardrails
 
+- The video must show the actual computer-use test session. Never present
+  scripted playback, stitched clips, or synthetic footage as a recording; if
+  there is no GUI to drive, use the headless path instead.
 - Never record a half-covered or tiled window — maximize first.
 - When verifying a fix, show or reference the old failure alongside the new success.
 - Always state the exact commit/branch/deployment tested against.
