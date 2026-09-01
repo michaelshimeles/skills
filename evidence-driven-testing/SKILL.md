@@ -91,8 +91,16 @@ unchanged; only the input mechanism differs.
   + screenshot) → act via `element_token` (`click`, `type_text`, `press_key`)
   → `verify_state` for the expected postcondition. Each `verify_state` check
   maps 1:1 onto an `assertion` annotation.
-- `cua-driver recording start` / `recording stop` can double as the recorder:
-  it captures the display to `recording.mp4` while you drive.
+- `cua-driver recording start <output-dir>` / `cua-driver recording stop` can
+  double as the recorder (the output directory is required, and the daemon
+  must be running: `cua-driver serve`). Video capture is on by default and is
+  finalized to `<output-dir>/recording.mp4` on stop — but on Windows/Linux it
+  shells out to ffmpeg, so a missing ffmpeg or display yields only the
+  per-turn trajectory folders (before/after screenshots, `action.json`,
+  `click.png`), no video. After stopping, verify `recording.mp4` exists
+  before citing it; if it is absent, fix the recorder or present the
+  per-turn before/after screenshots as numbered captures per the headless
+  protocol.
 - If no annotation overlay is available on this path, keep the protocol as
   files: an `assertions.md` listing each `test_start` / `assertion` with its
   result, exactly as in the headless path.
