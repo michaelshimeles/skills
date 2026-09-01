@@ -117,6 +117,43 @@ def test_synthetic_recording_is_annotated_verified_and_reported(tmp_path: Path):
     assert len(manifest_data["annotations"]) == 3
 
 
+def test_concurrent_annotations_are_all_persisted(tmp_path: Path):
+    started = run_cli("start", "--output", str(tmp_path), "--source", "test")
+    assert started.returncode == 0, started.stderr
+    session = Path(json.loads(started.stdout)["session"])
+
+    count = 24
+    procs = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "annotate",
+                str(session),
+                "--type",
+                "assertion",
+                "--result",
+                "passed",
+                "--message",
+                f"Concurrent annotation {index:02d}",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for index in range(count)
+    ]
+    results = [proc.communicate() for proc in procs]
+    assert all(proc.returncode == 0 for proc in procs), [err for _, err in results if err]
+
+    stopped = run_cli("stop", str(session))
+    assert stopped.returncode == 0, stopped.stderr
+    manifest = json.loads(Path(json.loads(stopped.stdout)["manifest"]).read_text())
+    messages = sorted(item["message"] for item in manifest["annotations"])
+    assert messages == sorted(f"Concurrent annotation {index:02d}" for index in range(count))
+
+
 def test_finalization_failure_is_recorded_and_retryable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

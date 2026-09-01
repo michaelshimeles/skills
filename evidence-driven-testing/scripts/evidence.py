@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import fcntl
 import json
 import os
 import select
@@ -66,6 +68,25 @@ def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     temporary.replace(path)
+
+
+@contextlib.contextmanager
+def session_lock(session_path: Path):
+    """Serialize read-modify-write updates to a session across processes.
+
+    atomic_write_json prevents torn files but not lost updates: two `annotate`
+    commands can both load the same session, append locally, and the second
+    replace discards the first. An advisory lock held across load + write
+    makes each mutation a transaction.
+    """
+    lock_path = session_path.with_suffix(session_path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def load_session(path: Path) -> dict[str, Any]:
@@ -231,9 +252,6 @@ def command_start(args: argparse.Namespace) -> int:
 
 def command_annotate(args: argparse.Namespace) -> int:
     session_path = Path(args.session).expanduser().resolve()
-    session = load_session(session_path)
-    if session.get("status") != "recording":
-        raise EvidenceError("annotations can only be added while recording")
     message = args.message.strip()
     if not message:
         raise EvidenceError("annotation message cannot be empty")
@@ -244,16 +262,20 @@ def command_annotate(args: argparse.Namespace) -> int:
     if args.type != "assertion" and args.result:
         raise EvidenceError("--result is only valid for assertion annotations")
 
-    annotation: dict[str, Any] = {
-        "type": args.type,
-        "message": message,
-        "timestamp_seconds": round(max(0.0, time.time() - float(session["started_epoch"])), 3),
-        "created_at": utc_now(),
-    }
-    if args.result:
-        annotation["result"] = args.result
-    session["annotations"].append(annotation)
-    atomic_write_json(session_path, session)
+    with session_lock(session_path):
+        session = load_session(session_path)
+        if session.get("status") != "recording":
+            raise EvidenceError("annotations can only be added while recording")
+        annotation: dict[str, Any] = {
+            "type": args.type,
+            "message": message,
+            "timestamp_seconds": round(max(0.0, time.time() - float(session["started_epoch"])), 3),
+            "created_at": utc_now(),
+        }
+        if args.result:
+            annotation["result"] = args.result
+        session["annotations"].append(annotation)
+        atomic_write_json(session_path, session)
     print(json.dumps(annotation, sort_keys=True))
     return 0
 
@@ -488,6 +510,11 @@ def write_report(path: Path, session: dict[str, Any], verification: dict[str, An
 
 def command_stop(args: argparse.Namespace) -> int:
     session_path = Path(args.session).expanduser().resolve()
+    with session_lock(session_path):
+        return finalize_session(session_path)
+
+
+def finalize_session(session_path: Path) -> int:
     session = load_session(session_path)
     status = session.get("status")
     if status == "recording":
