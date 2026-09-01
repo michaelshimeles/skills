@@ -489,6 +489,7 @@ def test_default_source_follows_platform_and_environment(monkeypatch: pytest.Mon
 
     monkeypatch.delenv("DISPLAY")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "Hyprland")
     monkeypatch.setattr(EVIDENCE.shutil, "which", lambda name: "/usr/bin/wf-recorder" if name == "wf-recorder" else None)
     assert EVIDENCE.capture_status()["default_source"] == "wayland"
     monkeypatch.setattr(EVIDENCE.shutil, "which", lambda name: None)
@@ -631,6 +632,13 @@ def test_wayland_readiness_requires_a_wlroots_compositor(monkeypatch: pytest.Mon
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "sway")
     assert EVIDENCE.capture_status()["default_source"] == "wayland"
 
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "some-new-compositor")  # unknown + no inspector: not ready
+    unknown = EVIDENCE.capture_status()
+    assert unknown["sources"]["wayland"]["available"] is False
+    assert "install wayland-info" in unknown["sources"]["wayland"]["reason"]
+    assert unknown["default_source"] is None
+    assert EVIDENCE.resolve_source("wayland") == "wayland", "an explicit choice is still honoured"
+
     tools["wayland-info"] = "/usr/bin/wayland-info"
     monkeypatch.setattr(
         EVIDENCE.subprocess,
@@ -695,3 +703,52 @@ def test_unclean_recorder_exit_still_finalizes_from_mpegts(tmp_path: Path):
     manifest = json.loads(Path(result["manifest"]).read_text())
     assert manifest["status"] == "finalized"
     assert manifest["raw_video"].endswith(".ts")
+
+
+def test_supervisor_lost_before_identity_is_not_a_confirmed_stop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(EVIDENCE, "platform_name", lambda: "darwin")
+    monkeypatch.setattr(EVIDENCE, "RAW_QUIESCENCE_SECONDS", 0.4)
+    raw_video = tmp_path / "raw.ts"
+    writer = subprocess.Popen(
+        [sys.executable, "-c", f"import time\nwhile True:\n open({str(raw_video)!r}, 'ab').write(b'x' * 512); time.sleep(0.05)"],
+    )
+    try:
+        time.sleep(0.3)
+        dead = subprocess.run([sys.executable, "-c", "pass"])  # a PID that has exited
+        session_path = tmp_path / "session.json"
+        EVIDENCE.atomic_write_json(
+            session_path,
+            {
+                "status": "recording",
+                "mode": "supervised",
+                "title": "Lost supervisor",
+                "commit": "abc123",
+                "branch": "feature/lost",
+                "environment": "test",
+                "raw_video": str(raw_video),
+                "supervisor_identity": {"pid": 999999999, "process_group_id": 1, "started": "never"},
+                "recorder_identity": None,
+                "annotations": [],
+            },
+        )
+        probed: list[Path] = []
+        monkeypatch.setattr(EVIDENCE, "probe_video", lambda path: probed.append(path))
+
+        with pytest.raises(EVIDENCE.EvidenceError, match="before recording the recorder's identity"):
+            EVIDENCE.finalize_session(session_path)
+        assert json.loads(session_path.read_text())["status"] == "recorder_lost"
+        assert probed == []
+
+        with pytest.raises(EVIDENCE.EvidenceError, match="still being written"):
+            EVIDENCE.finalize_session(session_path)
+        assert probed == [] and json.loads(session_path.read_text())["status"] == "recorder_lost"
+    finally:
+        writer.kill()
+        writer.wait(timeout=2)
+
+    verification = {"duration_seconds": 1.0, "codec": "h264", "width": 320, "height": 180, "size_bytes": 3}
+    monkeypatch.setattr(EVIDENCE, "probe_video", lambda _path: verification)
+    monkeypatch.setattr(EVIDENCE, "write_annotations", lambda *_args: None)
+    monkeypatch.setattr(EVIDENCE, "render_video", lambda *_args: None)
+    assert EVIDENCE.finalize_session(session_path) == 0
+    assert json.loads(session_path.read_text())["status"] == "finalized"

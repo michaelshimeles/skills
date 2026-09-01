@@ -54,6 +54,9 @@ STOP_REQUEST_NAME = "stop.request"
 RECORDER_EXIT_NAME = "recorder-exit.json"
 RECORDER_COMMAND_NAME = "recorder-command.json"
 WLR_SCREENCOPY_PROTOCOL = "zwlr_screencopy_manager_v1"
+# Compositors known to implement wlr-screencopy; anything else needs a protocol probe.
+WLROOTS_COMPOSITORS = ("sway", "hyprland", "river", "wayfire", "labwc", "dwl", "niri")
+RAW_QUIESCENCE_SECONDS = 1.5
 SUBPROCESS_FLAGS: dict[str, Any] = {}
 if sys.platform == "win32":  # pragma: no cover - Windows
     SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -169,7 +172,13 @@ def wayland_capture_support() -> tuple[bool, str]:
     ).lower()
     if any(marker in desktop for marker in ("gnome", "kde", "plasma")):
         return False, "GNOME/KDE Wayland sessions lack wlr-screencopy, so wf-recorder cannot capture them"
-    return True, "compositor assumed wlroots-compatible (install wayland-info to verify)"
+    known = next((name for name in WLROOTS_COMPOSITORS if name in desktop), None)
+    if known:
+        return True, f"{known} implements {WLR_SCREENCOPY_PROTOCOL}"
+    return False, (
+        f"cannot confirm {WLR_SCREENCOPY_PROTOCOL} support for this compositor ({desktop.strip() or 'unknown'}); "
+        "install wayland-info to verify, or pass --source wayland explicitly"
+    )
 
 
 def capture_status() -> dict[str, Any]:
@@ -716,6 +725,15 @@ def command_supervise(args: argparse.Namespace) -> int:
     return 0
 
 
+def raw_still_growing(raw_video: Path, window_seconds: float = RAW_QUIESCENCE_SECONDS) -> bool:
+    """Whether something is still appending to the raw capture (used when no identity can be checked)."""
+    if not raw_video.exists():
+        return False
+    before = raw_video.stat().st_size
+    time.sleep(window_seconds)
+    return raw_video.exists() and raw_video.stat().st_size != before
+
+
 def identity_alive(identity: Any) -> bool:
     if not isinstance(identity, dict) or "pid" not in identity:
         return False
@@ -736,7 +754,14 @@ def stop_supervised(session: dict[str, Any], session_dir: Path, timeout_seconds:
         if not identity_alive(session.get("supervisor_identity")):
             # Supervisor is gone without writing an exit record. We never signal the
             # recorder by PID from here, so if it is still running the operator has to.
-            recorder = session.get("recorder_identity")
+            recorder = load_session(session_dir / "session.json").get("recorder_identity")
+            if not isinstance(recorder, dict):
+                # The supervisor died before persisting what it spawned: we cannot tell
+                # whether a recorder exists, so this is not a confirmed stop.
+                raise EvidenceError(
+                    "supervisor exited before recording the recorder's identity; the recorder may still be "
+                    "running — check for a stray ffmpeg writing raw.ts, stop it, then run `stop` again"
+                )
             if identity_alive(recorder):
                 raise EvidenceError(
                     f"supervisor exited without stopping recorder PID {recorder['pid']}, which is still running; "
@@ -1155,6 +1180,13 @@ def finalize_session(session_path: Path) -> int:
                     f"recorder PID {identity['pid']} is still running; stop it before finalizing "
                     "(session stays recorder_lost)"
                 )
+        elif raw_still_growing(Path(session["raw_video"])):
+            # No identity to check (the supervisor died before persisting one): the
+            # only evidence available is whether the raw capture has gone quiet.
+            raise EvidenceError(
+                "raw capture is still being written by an untracked recorder; stop it before finalizing "
+                "(session stays recorder_lost)"
+            )
     elif status not in ("recorded", "finalizing", "finalization_failed"):
         raise EvidenceError(f"session cannot be finalized (status: {status})")
 
