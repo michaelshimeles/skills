@@ -68,7 +68,10 @@ Python 3 and FFmpeg.
   folder) to interrupt, then terminate, then kill; it writes
   `recorder-exit.json` when done. Nothing ever signals a bare PID, so a
   recycled PID can't be hit. If the supervisor dies while the recorder is
-  still running, `stop` refuses and tells you which PID to stop by hand.
+  still running, `stop` refuses and tells you which PID to stop by hand. If
+  it died before it could even record which process it started, `stop` stays
+  blocked until you have checked for a stray recorder yourself and rerun it
+  with `--accept-untracked-recorder`; the report then carries that caveat.
 - **Fallback recorders** when `doctor` reports no capture source (for
   example Wayland without wf-recorder): `cua-driver recording start <dir>` /
   `stop` (see the cua-driver section), or the OS recorder (macOS:

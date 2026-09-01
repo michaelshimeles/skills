@@ -1125,7 +1125,13 @@ def write_report(path: Path, session: dict[str, Any], verification: dict[str, An
         else:
             label = annotation["type"].upper()
         lines.append(f"- `{timestamp:06.2f}s` **{label}** — {annotation['message']}")
-    lines.extend(["", "## Caveats", "", "- None recorded. Add manual caveats before publishing if needed.", ""])
+    caveats = ["- None recorded. Add manual caveats before publishing if needed."]
+    if session.get("untracked_recorder_accepted_at"):
+        caveats = [
+            "- The recorder's identity was never recorded (its supervisor died early); the operator confirmed by "
+            "hand that no recorder was still writing before finalizing. Treat the tail of the video with care."
+        ]
+    lines.extend(["", "## Caveats", "", *caveats, ""])
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -1137,10 +1143,10 @@ def write_report(path: Path, session: dict[str, Any], verification: dict[str, An
 def command_stop(args: argparse.Namespace) -> int:
     session_path = Path(args.session).expanduser().resolve()
     with session_lock(session_path):
-        return finalize_session(session_path)
+        return finalize_session(session_path, accept_untracked=bool(getattr(args, "accept_untracked", False)))
 
 
-def finalize_session(session_path: Path) -> int:
+def finalize_session(session_path: Path, accept_untracked: bool = False) -> int:
     session = load_session(session_path)
     status = session.get("status")
     if status == "recording":
@@ -1180,13 +1186,23 @@ def finalize_session(session_path: Path) -> int:
                     f"recorder PID {identity['pid']} is still running; stop it before finalizing "
                     "(session stays recorder_lost)"
                 )
-        elif raw_still_growing(Path(session["raw_video"])):
-            # No identity to check (the supervisor died before persisting one): the
-            # only evidence available is whether the raw capture has gone quiet.
-            raise EvidenceError(
-                "raw capture is still being written by an untracked recorder; stop it before finalizing "
-                "(session stays recorder_lost)"
-            )
+        elif not (session_path.parent / RECORDER_EXIT_NAME).exists():
+            # No identity was ever persisted (the supervisor died before it could) and
+            # no exit record exists, so nothing can prove the recorder is gone. A quiet
+            # or missing raw file is not proof: the recorder may be idle, buffering, or
+            # not have created it yet. Only an explicit operator decision unblocks this.
+            if not accept_untracked:
+                raise EvidenceError(
+                    "cannot confirm the untracked recorder exited (no identity, no exit record). Check for a "
+                    "stray recorder process writing raw.ts, stop it, then run `stop --accept-untracked-recorder` "
+                    "(session stays recorder_lost)"
+                )
+            if raw_still_growing(Path(session["raw_video"])):
+                raise EvidenceError(
+                    "raw capture is still being written by an untracked recorder; stop it before finalizing "
+                    "(session stays recorder_lost)"
+                )
+            session["untracked_recorder_accepted_at"] = utc_now()
     elif status not in ("recorded", "finalizing", "finalization_failed"):
         raise EvidenceError(f"session cannot be finalized (status: {status})")
 
@@ -1279,6 +1295,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     stop = subparsers.add_parser("stop", help="Stop, render, and verify evidence")
     stop.add_argument("session")
+    stop.add_argument(
+        "--accept-untracked-recorder",
+        action="store_true",
+        dest="accept_untracked",
+        help="finalize a recorder_lost session whose recorder identity was never recorded, after you have "
+        "confirmed by hand that no recorder process is still writing raw.ts",
+    )
 
     supervise = subparsers.add_parser("supervise", help=argparse.SUPPRESS)  # internal: launched by `start`
     supervise.add_argument("session")

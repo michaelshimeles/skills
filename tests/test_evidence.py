@@ -739,16 +739,27 @@ def test_supervisor_lost_before_identity_is_not_a_confirmed_stop(tmp_path: Path,
         assert json.loads(session_path.read_text())["status"] == "recorder_lost"
         assert probed == []
 
-        with pytest.raises(EVIDENCE.EvidenceError, match="still being written"):
+        # A quiet-looking raw file is never authorization on its own...
+        with pytest.raises(EVIDENCE.EvidenceError, match="cannot confirm the untracked recorder exited"):
             EVIDENCE.finalize_session(session_path)
+        # ...and even the explicit override refuses while something is still writing.
+        with pytest.raises(EVIDENCE.EvidenceError, match="still being written"):
+            EVIDENCE.finalize_session(session_path, accept_untracked=True)
         assert probed == [] and json.loads(session_path.read_text())["status"] == "recorder_lost"
     finally:
         writer.kill()
         writer.wait(timeout=2)
 
+    # Writer gone, but still no proof: stays blocked without the operator's explicit decision.
+    with pytest.raises(EVIDENCE.EvidenceError, match="--accept-untracked-recorder"):
+        EVIDENCE.finalize_session(session_path)
+    assert json.loads(session_path.read_text())["status"] == "recorder_lost"
+
     verification = {"duration_seconds": 1.0, "codec": "h264", "width": 320, "height": 180, "size_bytes": 3}
     monkeypatch.setattr(EVIDENCE, "probe_video", lambda _path: verification)
     monkeypatch.setattr(EVIDENCE, "write_annotations", lambda *_args: None)
     monkeypatch.setattr(EVIDENCE, "render_video", lambda *_args: None)
-    assert EVIDENCE.finalize_session(session_path) == 0
-    assert json.loads(session_path.read_text())["status"] == "finalized"
+    assert EVIDENCE.finalize_session(session_path, accept_untracked=True) == 0
+    finalized = json.loads(session_path.read_text())
+    assert finalized["status"] == "finalized" and finalized["untracked_recorder_accepted_at"]
+    assert "never recorded" in (tmp_path / "report.md").read_text()
