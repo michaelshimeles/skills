@@ -8,9 +8,9 @@ description: >
   verifiable evidence that it works, instead of prose claims — including
   headless environments (scripted screenshots and probes) and non-UI changes
   (measured numbers, output pairs).
-compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test. The bundled recorder (scripts/evidence.py) needs Linux with an X11/XWayland display and ffmpeg + ffprobe built with libx264 and the ass filter; macOS/Windows use cua-driver's recorder or the OS recorder instead. The headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
+compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test. The bundled recorder (scripts/evidence.py) runs on Linux (X11 via x11grab, Wayland via wf-recorder), macOS (avfoundation, needs Screen Recording permission) and Windows (gdigrab) and needs Python 3 plus ffmpeg + ffprobe built with libx264 and the ass filter. The headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
 metadata:
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Evidence-Driven Testing
@@ -24,10 +24,11 @@ recording has no value as evidence unless it shows that interactive session.
 If the harness has no computer-use tools but a GUI exists, drive the app with
 `cua-driver` instead (see below) — it is still your live session.
 
-The bundled recorder, `scripts/evidence.py`, captures the display with FFmpeg,
-timestamps each annotation you add while testing, burns them into the video on
-stop, and verifies the result with ffprobe. It writes `evidence.mp4`,
-`report.md`, and `manifest.json` into the session folder.
+The bundled recorder, `scripts/evidence.py`, captures the display with FFmpeg
+on Linux, macOS, and Windows, timestamps each annotation you add while
+testing, burns them into the video on stop, and verifies the result with
+ffprobe. It writes `evidence.mp4`, `report.md`, and `manifest.json` into the
+session folder.
 
 ## Inputs
 
@@ -42,17 +43,32 @@ folder (wherever the skill is installed, e.g.
 Python 3 and FFmpeg.
 
 - **Check first**: `python3 $EVIDENCE doctor` — verifies `ffmpeg`, `ffprobe`,
-  `libx264`, and the `ass` filter, and exits non-zero if anything is missing.
-- **Platform**: Linux with an X11 or XWayland display (`--source x11`, uses
-  `x11grab`). Pure Wayland denies X11 capture; point `--display` at an
-  XWayland display or use a fallback recorder.
-- **Fallback recorders** when the bundled one cannot run (macOS, Windows,
-  Wayland-only): `cua-driver recording start <dir>` / `stop` (see the
-  cua-driver section), or the OS recorder (macOS: `screencapture -v out.mov`).
-  On these paths there is no annotation overlay, so keep the annotation
-  protocol as files — an `assertions.md` listing each `setup` / `test_start` /
-  `assertion` with its result and the approximate video timestamp, exactly as
-  in the headless path.
+  `libx264`, and the `ass` filter (`ready`), then which screen-capture source
+  works on this machine (`capture_ready` and the source `auto` will pick).
+  Exits non-zero only when the toolchain is missing; read `capture_ready`
+  before recording.
+- **Platforms** (`--source auto` picks the first available):
+
+  | OS | Source | Needs |
+  |---|---|---|
+  | Linux X11 / XWayland | `x11` (x11grab) | `DISPLAY` set |
+  | Linux Wayland | `wayland` (wf-recorder) | `WAYLAND_DISPLAY` set, `wf-recorder` on PATH (wlroots compositors) |
+  | macOS | `avfoundation` | Screen Recording permission granted to the terminal / agent host app; `doctor` lists screen indexes for `--screen-index` |
+  | Windows | `gdigrab` | any standard ffmpeg build; `powershell` for process checks |
+
+  Capture is the full screen by default; `--geometry WxH` and `--offset X,Y`
+  crop a region on x11, wayland, and gdigrab. XWayland only sees X11 windows,
+  so prefer the `wayland` source when the app under test is Wayland-native.
+- **Crash-safe raw capture**: the raw recording is MPEG-TS (`raw.ts`), so if
+  the recorder is killed hard or crashes, what was captured still probes and
+  renders. `stop` remuxes or re-encodes it into a standard `evidence.mp4`.
+- **Fallback recorders** when `doctor` reports no capture source (for
+  example Wayland without wf-recorder): `cua-driver recording start <dir>` /
+  `stop` (see the cua-driver section), or the OS recorder (macOS:
+  `screencapture -v out.mov`). On these paths there is no annotation overlay,
+  so keep the annotation protocol as files — an `assertions.md` listing each
+  `setup` / `test_start` / `assertion` with its result and the approximate
+  video timestamp, exactly as in the headless path.
 - **Never** present `--source test` (the synthetic pattern generator) as UI
   evidence. It exists to smoke-test the toolchain; the repo's
   `tests/test_evidence.py` exercises it.
@@ -74,15 +90,16 @@ Python 3 and FFmpeg.
   ```bash
   python3 $EVIDENCE start \
     --output .artifacts/<task-name> \
-    --source x11 --display "$DISPLAY" --geometry 1920x1080 \
     --title "<what is being verified>" \
     --commit "$(git rev-parse HEAD)" --branch "$(git branch --show-current)" \
-    --environment "<browser / display / deployment>"
+    --environment "<OS / browser / display / deployment>"
   ```
 
-  It prints JSON with a `session` path; keep it (`SESSION=...`) for every
-  later command. Match `--geometry` to the display size (`xdpyinfo | grep
-  dimensions`); add `--xauthority` if the display needs it.
+  It prints JSON with a `session` path and the chosen `source`; keep the
+  path (`SESSION=...`) for every later command. The source is auto-detected
+  and the whole screen is captured; pass `--source`, `--geometry`,
+  `--offset`, `--display`/`--xauthority` (X11), `--screen-index` (macOS), or
+  `--output-name` (Wayland) only when `doctor` or the situation calls for it.
 - Add a `setup` annotation describing the starting context:
 
   ```bash
@@ -127,7 +144,8 @@ Python 3 and FFmpeg.
   python3 $EVIDENCE stop "$SESSION"
   ```
 
-  This ends the FFmpeg capture, burns the annotations into `evidence.mp4`,
+  This stops the capture (gracefully, so the recorder flushes; escalating
+  only if it ignores the request), burns the annotations into `evidence.mp4`,
   probes the result, and writes `report.md` and `manifest.json` next to it.
   It prints `"verified": true` on success; if rendering fails the session is
   marked `finalization_failed` — fix the reported cause and run `stop` again
@@ -181,9 +199,10 @@ unchanged; only the input mechanism differs.
   + screenshot) → act via `element_token` (`click`, `type_text`, `press_key`)
   → `verify_state` for the expected postcondition. Each `verify_state` check
   maps 1:1 onto an `assertion` annotation.
-- On Linux/X11, keep using the bundled recorder above for the video and the
-  annotations; cua-driver only supplies the input.
-- Elsewhere, `cua-driver recording start <output-dir>` / `cua-driver recording
+- Wherever `doctor` reports `capture_ready: yes`, keep using the bundled
+  recorder above for the video and the annotations; cua-driver only supplies
+  the input.
+- Otherwise, `cua-driver recording start <output-dir>` / `cua-driver recording
   stop` is the recorder (the output directory is required, and the daemon
   must be running: `cua-driver serve`). Video capture is on by default and is
   finalized to `<output-dir>/recording.mp4` on stop — but on Windows/Linux it
