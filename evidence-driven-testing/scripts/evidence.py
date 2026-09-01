@@ -512,7 +512,19 @@ def command_stop(args: argparse.Namespace) -> int:
         session["stopped_at"] = utc_now()
         session.pop("failure", None)
         atomic_write_json(session_path, session)
-    elif status not in ("recorded", "recorder_lost", "finalizing", "finalization_failed"):
+    elif status == "recorder_lost":
+        # Only finalize once the original recorder is confirmed gone. If the same
+        # process (PID + process group + start time) is still alive it may still be
+        # writing raw.mp4, and rendering now would publish truncated evidence.
+        identity = session.get("recorder_identity")
+        if isinstance(identity, dict):
+            current = process_identity(int(identity["pid"]))
+            if current is not None and identity_matches(identity, current):
+                raise EvidenceError(
+                    f"recorder PID {identity['pid']} is still running; stop it before finalizing "
+                    "(session stays recorder_lost)"
+                )
+    elif status not in ("recorded", "finalizing", "finalization_failed"):
         raise EvidenceError(f"session cannot be finalized (status: {status})")
 
     session["status"] = "finalizing"

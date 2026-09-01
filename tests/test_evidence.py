@@ -223,6 +223,56 @@ def test_stop_marks_session_recorder_lost_on_identity_mismatch_and_finalizes_on_
     assert "failure" not in finalized
 
 
+def test_recorder_lost_retry_refuses_to_finalize_while_recorder_is_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True)
+    try:
+        time.sleep(0.1)
+        identity = EVIDENCE.process_identity(process.pid)
+        assert identity is not None
+        raw_video = tmp_path / "raw.mp4"
+        raw_video.write_bytes(b"raw")
+        session_path = tmp_path / "session.json"
+        EVIDENCE.atomic_write_json(
+            session_path,
+            {
+                "status": "recorder_lost",
+                "failure": f"recorder PID {process.pid} remained alive after SIGKILL",
+                "title": "Survivor",
+                "commit": "abc123",
+                "branch": "feature/survivor",
+                "environment": "test",
+                "raw_video": str(raw_video),
+                "recorder_identity": identity,
+                "annotations": [],
+            },
+        )
+        probed: list[Path] = []
+        monkeypatch.setattr(EVIDENCE, "probe_video", lambda path: probed.append(path))
+        args = argparse.Namespace(session=str(session_path))
+
+        with pytest.raises(EVIDENCE.EvidenceError, match="still running"):
+            EVIDENCE.command_stop(args)
+        assert probed == []
+        still_lost = json.loads(session_path.read_text())
+        assert still_lost["status"] == "recorder_lost"
+
+        process.kill()
+        process.wait(timeout=2)
+        verification = {"duration_seconds": 1.0, "codec": "h264", "width": 320, "height": 180, "size_bytes": 3}
+        monkeypatch.setattr(EVIDENCE, "probe_video", lambda _path: verification)
+        monkeypatch.setattr(EVIDENCE, "write_annotations", lambda *_args: None)
+        monkeypatch.setattr(EVIDENCE, "render_video", lambda *_args: None)
+
+        assert EVIDENCE.command_stop(args) == 0
+        assert json.loads(session_path.read_text())["status"] == "finalized"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+
+
 def test_stop_refuses_to_signal_a_reused_or_tampered_pid(monkeypatch: pytest.MonkeyPatch):
     identity = EVIDENCE.process_identity(os.getpid())
     assert identity is not None
