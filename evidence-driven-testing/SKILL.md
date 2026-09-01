@@ -52,7 +52,7 @@ Python 3 and FFmpeg.
   | OS | Source | Needs |
   |---|---|---|
   | Linux X11 / XWayland | `x11` (x11grab) | `DISPLAY` set |
-  | Linux Wayland | `wayland` (wf-recorder) | `WAYLAND_DISPLAY` set, `wf-recorder` on PATH (wlroots compositors) |
+  | Linux Wayland | `wayland` (wf-recorder) | `WAYLAND_DISPLAY` set, `wf-recorder` on PATH, and a wlroots compositor (Sway, Hyprland, river). GNOME and KDE Wayland are not capturable this way — `doctor` says so; use `x11` through XWayland for X11 apps, or a fallback recorder |
   | macOS | `avfoundation` | Screen Recording permission granted to the terminal / agent host app; `doctor` lists screen indexes for `--screen-index` |
   | Windows | `gdigrab` | any standard ffmpeg build; `powershell` for process checks |
 
@@ -62,6 +62,13 @@ Python 3 and FFmpeg.
 - **Crash-safe raw capture**: the raw recording is MPEG-TS (`raw.ts`), so if
   the recorder is killed hard or crashes, what was captured still probes and
   renders. `stop` remuxes or re-encodes it into a standard `evidence.mp4`.
+- **How stopping works**: on Linux the recorder is signalled through a pidfd.
+  On macOS and Windows `start` launches a small supervisor process that owns
+  the ffmpeg child, and `stop` asks it (via `stop.request` in the session
+  folder) to interrupt, then terminate, then kill; it writes
+  `recorder-exit.json` when done. Nothing ever signals a bare PID, so a
+  recycled PID can't be hit. If the supervisor dies while the recorder is
+  still running, `stop` refuses and tells you which PID to stop by hand.
 - **Fallback recorders** when `doctor` reports no capture source (for
   example Wayland without wf-recorder): `cua-driver recording start <dir>` /
   `stop` (see the cua-driver section), or the OS recorder (macOS:

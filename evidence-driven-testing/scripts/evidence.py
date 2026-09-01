@@ -5,6 +5,13 @@ Works on Linux (X11 via x11grab, Wayland via wf-recorder), macOS (avfoundation)
 and Windows (gdigrab). The raw capture is written as MPEG-TS so that a hard
 stop — SIGKILL, TerminateProcess, a crashed recorder — still leaves a playable,
 probe-able file; `stop` remuxes or re-encodes it into a standard MP4.
+
+Stopping the recorder never signals a bare, reusable PID. On Linux the
+recorder is signalled through a pidfd. Everywhere else `start` launches a
+small supervisor that owns the ffmpeg child: a parent holds an exited child
+until it reaps it, so the child's PID cannot be recycled and the supervisor is
+the only process that ever signals it. `stop` asks the supervisor (via a
+request file) and waits for its exit record.
 """
 
 from __future__ import annotations
@@ -42,7 +49,11 @@ ANNOTATION_TYPES = ("setup", "test_start", "assertion")
 ASSERTION_RESULTS = ("passed", "failed", "untested")
 CAPTURE_SOURCES = ("auto", "x11", "wayland", "avfoundation", "gdigrab", "test")
 RAW_CONTAINER = "ts"  # MPEG-TS survives an unclean recorder exit; see module docstring
-IDENTITY_POLL_SECONDS = {"linux": 0.05, "darwin": 0.1, "windows": 0.5}
+IDENTITY_POLL_SECONDS = {"linux": 0.05, "darwin": 0.1, "windows": 0.1}
+STOP_REQUEST_NAME = "stop.request"
+RECORDER_EXIT_NAME = "recorder-exit.json"
+RECORDER_COMMAND_NAME = "recorder-command.json"
+WLR_SCREENCOPY_PROTOCOL = "zwlr_screencopy_manager_v1"
 SUBPROCESS_FLAGS: dict[str, Any] = {}
 if sys.platform == "win32":  # pragma: no cover - Windows
     SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -53,7 +64,14 @@ class EvidenceError(RuntimeError):
 
 
 def platform_name() -> str:
-    """Return linux / darwin / windows (monkeypatched in tests)."""
+    """Return linux / darwin / windows.
+
+    EVIDENCE_PLATFORM overrides detection so another OS's code path (the
+    supervisor, ps-based identity) can be exercised on this host in tests.
+    """
+    override = os.environ.get("EVIDENCE_PLATFORM")
+    if override:
+        return override
     if sys.platform.startswith("linux"):
         return "linux"
     if sys.platform == "darwin":
@@ -130,11 +148,38 @@ def detect_avfoundation_screens() -> list[dict[str, Any]]:
     return screens
 
 
+def wayland_capture_support() -> tuple[bool, str]:
+    """Whether the running Wayland compositor exposes what wf-recorder needs.
+
+    wf-recorder only works on wlroots-style compositors that implement
+    wlr-screencopy; GNOME (Mutter) and KDE (KWin) do not. Prefer asking the
+    compositor via wayland-info; fall back to the session's desktop variables.
+    """
+    for tool in ("wayland-info", "weston-info"):
+        if shutil.which(tool):
+            try:
+                result = subprocess.run([tool], text=True, capture_output=True, check=False, timeout=5)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                return False, f"{tool} failed: {error}"
+            if WLR_SCREENCOPY_PROTOCOL in result.stdout:
+                return True, f"{tool} reports {WLR_SCREENCOPY_PROTOCOL}"
+            return False, f"{tool} does not list {WLR_SCREENCOPY_PROTOCOL}; this compositor cannot be captured by wf-recorder"
+    desktop = " ".join(
+        os.environ.get(name, "") for name in ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION")
+    ).lower()
+    if any(marker in desktop for marker in ("gnome", "kde", "plasma")):
+        return False, "GNOME/KDE Wayland sessions lack wlr-screencopy, so wf-recorder cannot capture them"
+    return True, "compositor assumed wlroots-compatible (install wayland-info to verify)"
+
+
 def capture_status() -> dict[str, Any]:
     """Per-source availability on this machine, plus the source `auto` would pick."""
     system = platform_name()
     display = os.environ.get("DISPLAY")
     wayland = os.environ.get("WAYLAND_DISPLAY")
+    wayland_ok, wayland_reason = (False, "not a Linux Wayland session")
+    if system == "linux" and wayland and shutil.which("wf-recorder"):
+        wayland_ok, wayland_reason = wayland_capture_support()
     sources: dict[str, dict[str, Any]] = {
         "x11": {
             "available": system == "linux" and bool(display) and ffmpeg_has_device("x11grab"),
@@ -142,9 +187,13 @@ def capture_status() -> dict[str, Any]:
             "hint": "needs DISPLAY (X11 or XWayland) and an ffmpeg built with x11grab",
         },
         "wayland": {
-            "available": system == "linux" and bool(wayland) and shutil.which("wf-recorder") is not None,
+            "available": wayland_ok,
             "display": wayland,
-            "hint": "needs WAYLAND_DISPLAY and wf-recorder (wlroots compositors: Sway, Hyprland, ...)",
+            "reason": wayland_reason,
+            "hint": (
+                "needs WAYLAND_DISPLAY, wf-recorder, and a wlroots compositor (Sway, Hyprland, river, ...); "
+                "on GNOME/KDE use the x11 source through XWayland for X11 apps, or a fallback recorder"
+            ),
         },
         "avfoundation": {
             "available": False,
@@ -309,11 +358,39 @@ def encoder_arguments(framerate: int) -> list[str]:
     ]
 
 
+def parse_geometry(value: str | None) -> str | None:
+    """Validate WIDTHxHEIGHT (even dimensions, as yuv420p requires); None means full screen."""
+    if value is None:
+        return None
+    match = re.fullmatch(r"\s*(\d+)\s*[xX]\s*(\d+)\s*", value)
+    if not match:
+        raise EvidenceError(f"--geometry must be WIDTHxHEIGHT, e.g. 1920x1080 (got {value!r})")
+    width, height = int(match.group(1)), int(match.group(2))
+    if width <= 0 or height <= 0:
+        raise EvidenceError(f"--geometry dimensions must be positive (got {value!r})")
+    if width % 2 or height % 2:
+        raise EvidenceError(f"--geometry dimensions must be even for yuv420p encoding (got {value!r})")
+    return f"{width}x{height}"
+
+
+def parse_offset(value: str | None) -> tuple[int, int]:
+    """Validate X,Y (default 0,0)."""
+    if value is None or not value.strip():
+        return 0, 0
+    match = re.fullmatch(r"\s*(-?\d+)\s*,\s*(-?\d+)\s*", value)
+    if not match:
+        raise EvidenceError(f"--offset must be X,Y with exactly two integers, e.g. 0,0 or 1920,0 (got {value!r})")
+    return int(match.group(1)), int(match.group(2))
+
+
 def recorder_command(args: argparse.Namespace, raw_video: Path, source: str) -> list[str]:
     common = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-y"]
     framerate = int(args.framerate)
-    geometry = getattr(args, "geometry", None)
-    offset = getattr(args, "offset", None) or "0,0"
+    if framerate <= 0:
+        raise EvidenceError(f"--framerate must be positive (got {framerate})")
+    geometry = parse_geometry(getattr(args, "geometry", None))
+    offset_x, offset_y = parse_offset(getattr(args, "offset", None))
+    offset = f"{offset_x},{offset_y}"
 
     if source == "test":
         size = geometry or "1280x720"
@@ -348,8 +425,7 @@ def recorder_command(args: argparse.Namespace, raw_video: Path, source: str) -> 
             str(framerate),
         ]
         if geometry:
-            x, y = offset.split(",")
-            command += ["-g", f"{x},{y} {geometry}"]
+            command += ["-g", f"{offset_x},{offset_y} {geometry}"]
         if getattr(args, "output_name", None):
             command += ["-o", args.output_name]
         return command + ["-f", str(raw_video)]
@@ -369,8 +445,7 @@ def recorder_command(args: argparse.Namespace, raw_video: Path, source: str) -> 
     if source == "gdigrab":
         grab = ["-f", "gdigrab", "-framerate", str(framerate), "-draw_mouse", "1"]
         if geometry:
-            x, y = offset.split(",")
-            grab += ["-offset_x", x, "-offset_y", y, "-video_size", geometry]
+            grab += ["-offset_x", str(offset_x), "-offset_y", str(offset_y), "-video_size", geometry]
         grab += ["-i", "desktop"]
         return common + grab + encoder_arguments(framerate) + [str(raw_video)]
 
@@ -388,18 +463,24 @@ def recorder_environment(args: argparse.Namespace, source: str) -> dict[str, str
     return env
 
 
-def spawn_recorder(command: list[str], log_file: Any, env: dict[str, str]) -> subprocess.Popen[bytes]:
+def spawn_detached(command: list[str], log_file: Any, env: dict[str, str]) -> subprocess.Popen[bytes]:
+    """Start a long-lived child that outlives this CLI invocation."""
     kwargs: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
         "stdout": log_file,
         "stderr": subprocess.STDOUT,
         "env": env,
     }
-    if platform_name() == "windows":  # pragma: no cover - Windows
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    if platform_name() == "windows" and sys.platform == "win32":  # pragma: no cover - Windows
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         kwargs["start_new_session"] = True
     return subprocess.Popen(command, **kwargs)
+
+
+def uses_supervisor() -> bool:
+    """Linux signals the recorder through a pidfd; every other OS goes via the supervisor."""
+    return not (platform_name() == "linux" and hasattr(os, "pidfd_open") and sys.platform.startswith("linux"))
 
 
 # --------------------------------------------------------------------------- #
@@ -467,34 +548,38 @@ def _identity_ps(pid: int) -> dict[str, Any] | None:
     return parse_ps_identity(pid, result.stdout)
 
 
-WINDOWS_IDENTITY_SCRIPT = (
-    "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}'; "
-    "if ($p) {{ '{{0}}|{{1}}' -f $p.CreationDate.ToFileTimeUtc(), $p.ParentProcessId }}"
-)
-
-
-def parse_windows_identity(pid: int, output: str) -> dict[str, Any] | None:
-    line = output.strip()
-    if not line:
-        return None
-    try:
-        creation, parent = line.split("|")
-        return {"pid": pid, "creation_filetime": int(creation), "parent_pid": int(parent)}
-    except ValueError as error:
-        raise EvidenceError(f"cannot parse recorder process identity for PID {pid}: {line!r}") from error
+STILL_ACTIVE = 259
+ERROR_INVALID_PARAMETER = 87
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
 def _identity_windows(pid: int) -> dict[str, Any] | None:  # pragma: no cover - Windows
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_IDENTITY_SCRIPT.format(pid=pid)],
-        text=True,
-        capture_output=True,
-        check=False,
-        **SUBPROCESS_FLAGS,
-    )
-    if result.returncode != 0:
-        raise EvidenceError(f"cannot inspect recorder process {pid}: {result.stderr.strip()}")
-    return parse_windows_identity(pid, result.stdout)
+    """Identify a Windows process by its kernel creation time, read through a handle."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == ERROR_INVALID_PARAMETER:
+            return None
+        raise EvidenceError(f"cannot inspect recorder process {pid}: OpenProcess failed with error {error}")
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            raise EvidenceError(f"cannot inspect recorder process {pid}: GetExitCodeProcess failed")
+        if exit_code.value != STILL_ACTIVE:
+            return None
+        creation, exited, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel32.GetProcessTimes(
+            handle, ctypes.byref(creation), ctypes.byref(exited), ctypes.byref(kernel), ctypes.byref(user)
+        ):
+            raise EvidenceError(f"cannot inspect recorder process {pid}: GetProcessTimes failed")
+        filetime = (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+        return {"pid": pid, "creation_filetime": filetime}
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def process_exists(pid: int) -> bool:
@@ -504,19 +589,6 @@ def process_exists(pid: int) -> bool:
 def identity_matches(expected: dict[str, Any], current: dict[str, Any]) -> bool:
     """True only if every field of the live identity equals the stored one."""
     return all(key in expected and str(expected[key]) == str(current[key]) for key in current)
-
-
-def wait_for_original_exit(expected: dict[str, Any], timeout_seconds: float) -> bool:
-    """Poll until the recorded process is gone (or its PID belongs to someone else)."""
-    interval = IDENTITY_POLL_SECONDS.get(platform_name(), 0.1)
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        current = process_identity(int(expected["pid"]))
-        if current is None or not identity_matches(expected, current):
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(interval)
 
 
 # --------------------------------------------------------------------------- #
@@ -531,40 +603,26 @@ def wait_for_pidfd(pidfd: int, timeout_seconds: float) -> bool:
 
 
 def stop_recorder(expected: dict[str, Any], grace_seconds: float = 3.0) -> None:
-    """Stop the recorder described by `expected`, escalating gently, verifying exit.
+    """Stop a directly spawned recorder (Linux only), escalating gently and verifying exit.
 
     Refuses to signal when the live process at that PID is not the one we
-    started. Linux uses a pidfd so the check and the signal cannot race.
+    started. The pidfd binds the signal to the process instance so the check
+    and the signal cannot race with PID reuse. Other platforms never call this:
+    their recorder is owned by the supervisor (see `supervise`).
     """
-    system = platform_name()
-    if system == "linux" and hasattr(os, "pidfd_open"):
-        _stop_linux(expected, grace_seconds)
-    elif system == "windows":
-        _stop_windows(expected, grace_seconds)
-    else:
-        _stop_posix(expected, grace_seconds)
-
-
-def _check_identity_or_raise(expected: dict[str, Any]) -> dict[str, Any] | None:
-    pid = int(expected["pid"])
-    current = process_identity(pid)
-    if current is None:
-        return None
-    if not identity_matches(expected, current):
-        raise EvidenceError(f"recorder identity does not match live PID {pid}; refusing to signal it")
-    return current
-
-
-def _stop_linux(expected: dict[str, Any], grace_seconds: float) -> None:
+    if not (platform_name() == "linux" and hasattr(os, "pidfd_open")):
+        raise EvidenceError("direct recorder signalling is only supported on Linux; use the supervisor")
     pid = int(expected["pid"])
     try:
         pidfd = os.pidfd_open(pid)
     except ProcessLookupError:
         return
     try:
-        current = _check_identity_or_raise(expected)
+        current = process_identity(pid)
         if current is None:
             return
+        if not identity_matches(expected, current):
+            raise EvidenceError(f"recorder identity does not match live PID {pid}; refusing to signal it")
         if current["process_group_id"] != int(expected["process_group_id"]):
             raise EvidenceError(f"recorder process-group identity changed for PID {pid}")
         escalation = (
@@ -584,53 +642,110 @@ def _stop_linux(expected: dict[str, Any], grace_seconds: float) -> None:
         os.close(pidfd)
 
 
-def _stop_posix(expected: dict[str, Any], grace_seconds: float) -> None:
-    """macOS / BSD: os.kill with an identity re-check before every signal."""
-    pid = int(expected["pid"])
-    escalation = (
-        (signal.SIGINT, grace_seconds),
-        (signal.SIGTERM, grace_seconds),
-        (signal.SIGKILL, max(1.0, grace_seconds)),
-    )
-    for stop_signal, timeout in escalation:
-        if _check_identity_or_raise(expected) is None:
-            return
-        try:
-            os.kill(pid, stop_signal)
-        except ProcessLookupError:
-            return
-        if wait_for_original_exit(expected, timeout):
-            return
-    raise EvidenceError(f"recorder PID {pid} remained alive after SIGKILL")
+# --------------------------------------------------------------------------- #
+# Supervisor (macOS, Windows, and any platform without pidfd)
+# --------------------------------------------------------------------------- #
 
 
-def _stop_windows(expected: dict[str, Any], grace_seconds: float) -> None:  # pragma: no cover - Windows
-    """Windows: Ctrl+Break lets ffmpeg flush; TerminateProcess is the fallback.
+def stop_child_gracefully(child: subprocess.Popen[bytes], grace_seconds: float) -> None:
+    """Stop our own child: interrupt so ffmpeg flushes, then terminate, then kill.
 
-    Ctrl+Break only reaches a process that shares our console, which is why
-    the raw capture is MPEG-TS: a TerminateProcess'd recorder still leaves a
-    playable file.
+    Popen.send_signal/terminate/kill act on a child this process has not yet
+    reaped, so its PID cannot have been recycled — this is the only place a
+    recorder is ever signalled outside Linux.
     """
-    pid = int(expected["pid"])
-    attempts: list[tuple[int, float]] = []
-    ctrl_break = getattr(signal, "CTRL_BREAK_EVENT", None)
-    if ctrl_break is not None:
-        attempts.append((ctrl_break, grace_seconds))
-    attempts.append((signal.SIGTERM, max(1.0, grace_seconds)))  # TerminateProcess on Windows
-    for stop_signal, timeout in attempts:
-        if _check_identity_or_raise(expected) is None:
-            return
+    steps: list[Any] = []
+    if platform_name() == "windows" and sys.platform == "win32":  # pragma: no cover - Windows
+        steps.append(getattr(signal, "CTRL_BREAK_EVENT", None))
+    else:
+        steps.append(signal.SIGINT)
+    steps += ["terminate", "kill"]
+    for step in steps:
+        if step is None:
+            continue
         try:
-            os.kill(pid, stop_signal)
-        except (ProcessLookupError, OSError, SystemError):
-            if stop_signal == signal.SIGTERM:
-                if wait_for_original_exit(expected, 0.5):
-                    return
-                raise
-            continue  # no shared console: Ctrl+Break is impossible, fall through
-        if wait_for_original_exit(expected, timeout):
+            if step == "terminate":
+                child.terminate()
+            elif step == "kill":
+                child.kill()
+            else:
+                child.send_signal(step)
+        except (OSError, ValueError, SystemError):
+            continue
+        try:
+            child.wait(timeout=grace_seconds)
             return
-    raise EvidenceError(f"recorder PID {pid} remained alive after TerminateProcess")
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def command_supervise(args: argparse.Namespace) -> int:
+    """Own the recorder process for a session until asked to stop or it exits."""
+    session_path = Path(args.session).expanduser().resolve()
+    session_dir = session_path.parent
+    command = json.loads((session_dir / RECORDER_COMMAND_NAME).read_text())
+    log_path = session_dir / "recorder.log"
+    stop_request = session_dir / STOP_REQUEST_NAME
+    exit_record = session_dir / RECORDER_EXIT_NAME
+
+    kwargs: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stderr": subprocess.STDOUT}
+    if platform_name() == "windows" and sys.platform == "win32":  # pragma: no cover - Windows
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    with log_path.open("ab") as log_file:
+        try:
+            child = subprocess.Popen(command, stdout=log_file, **kwargs)
+        except OSError as error:
+            atomic_write_json(exit_record, {"returncode": None, "exited_at": utc_now(), "requested": False, "error": str(error)})
+            return 1
+
+    with session_lock(session_path):
+        session = load_session(session_path)
+        session["recorder_pid"] = child.pid
+        session["recorder_identity"] = process_identity(child.pid)
+        atomic_write_json(session_path, session)
+
+    requested = False
+    while child.poll() is None:
+        if stop_request.exists():
+            requested = True
+            stop_child_gracefully(child, args.grace)
+            break
+        time.sleep(0.1)
+    returncode = child.wait()
+    atomic_write_json(exit_record, {"returncode": returncode, "exited_at": utc_now(), "requested": requested})
+    return 0
+
+
+def identity_alive(identity: Any) -> bool:
+    if not isinstance(identity, dict) or "pid" not in identity:
+        return False
+    current = process_identity(int(identity["pid"]))
+    return current is not None and identity_matches(identity, current)
+
+
+def stop_supervised(session: dict[str, Any], session_dir: Path, timeout_seconds: float = 15.0) -> None:
+    """Ask the supervisor to stop the recorder and wait for its exit record."""
+    exit_record = session_dir / RECORDER_EXIT_NAME
+    if exit_record.exists():
+        return  # recorder already finished or crashed; the supervisor recorded it
+    (session_dir / STOP_REQUEST_NAME).touch()
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if exit_record.exists():
+            return
+        if not identity_alive(session.get("supervisor_identity")):
+            # Supervisor is gone without writing an exit record. We never signal the
+            # recorder by PID from here, so if it is still running the operator has to.
+            recorder = session.get("recorder_identity")
+            if identity_alive(recorder):
+                raise EvidenceError(
+                    f"supervisor exited without stopping recorder PID {recorder['pid']}, which is still running; "
+                    "stop it manually, then run `stop` again"
+                )
+            return
+        if time.monotonic() >= deadline:
+            raise EvidenceError(f"supervisor did not confirm recorder exit within {timeout_seconds:g} seconds")
+        time.sleep(0.1)
 
 
 # --------------------------------------------------------------------------- #
@@ -638,20 +753,47 @@ def _stop_windows(expected: dict[str, Any], grace_seconds: float) -> None:  # pr
 # --------------------------------------------------------------------------- #
 
 
+def read_log(log_path: Path) -> str:
+    return log_path.read_text(errors="replace").strip() if log_path.exists() else ""
+
+
 def wait_for_recorder(expected: dict[str, Any], raw_video: Path, log_path: Path, timeout_seconds: float = 10.0) -> None:
+    """Direct mode: wait until the recorder we spawned starts writing."""
     pid = int(expected["pid"])
     deadline = time.monotonic() + timeout_seconds
     interval = IDENTITY_POLL_SECONDS.get(platform_name(), 0.1)
     while time.monotonic() < deadline:
         current = process_identity(pid)
         if current is None:
-            details = log_path.read_text(errors="replace") if log_path.exists() else ""
-            raise EvidenceError(f"recorder exited during startup: {details.strip()}")
+            raise EvidenceError(f"recorder exited during startup: {read_log(log_path)}")
         if not identity_matches(expected, current):
             raise EvidenceError(f"recorder identity changed during startup for PID {pid}")
         if raw_video.exists() and raw_video.stat().st_size > 0:
             return
         time.sleep(interval)
+    raise EvidenceError(f"recorder did not create {raw_video} within {timeout_seconds:g} seconds")
+
+
+def wait_for_supervised_recorder(
+    session_path: Path, supervisor: dict[str, Any], raw_video: Path, timeout_seconds: float = 15.0
+) -> dict[str, Any]:
+    """Supervised mode: wait until the supervisor reports the recorder and it starts writing."""
+    session_dir = session_path.parent
+    exit_record = session_dir / RECORDER_EXIT_NAME
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if exit_record.exists():
+            record = json.loads(exit_record.read_text())
+            raise EvidenceError(
+                f"recorder exited during startup (returncode {record.get('returncode')}): "
+                f"{record.get('error') or read_log(session_dir / 'recorder.log')}"
+            )
+        if not identity_alive(supervisor):
+            raise EvidenceError(f"supervisor exited during startup: {read_log(session_dir / 'supervisor.log')}")
+        session = load_session(session_path)
+        if session.get("recorder_identity") and raw_video.exists() and raw_video.stat().st_size > 0:
+            return session
+        time.sleep(0.1)
     raise EvidenceError(f"recorder did not create {raw_video} within {timeout_seconds:g} seconds")
 
 
@@ -666,19 +808,17 @@ def command_start(args: argparse.Namespace) -> int:
 
     output_root = Path(args.output).expanduser().resolve()
     session_dir = output_root / f"evidence-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
-    session_dir.mkdir(parents=True)
     raw_video = session_dir / f"raw.{RAW_CONTAINER}"
     log_path = session_dir / "recorder.log"
     session_path = session_dir / "session.json"
+    # Validate everything (geometry, offset, source options) before touching disk.
     command = recorder_command(args, raw_video, source)
+    environment = recorder_environment(args, source)
+    supervised = uses_supervisor()
+    session_dir.mkdir(parents=True)
 
-    with log_path.open("wb") as log_file:
-        process = spawn_recorder(command, log_file, recorder_environment(args, source))
-
-    started_epoch = time.time()
-    identity = process_identity(process.pid)
     session: dict[str, Any] = {
-        "schema_version": 3,
+        "schema_version": 4,
         "status": "recording",
         "title": args.title,
         "commit": args.commit,
@@ -686,21 +826,50 @@ def command_start(args: argparse.Namespace) -> int:
         "environment": args.environment,
         "platform": platform_name(),
         "source": source,
+        "mode": "supervised" if supervised else "direct",
         "started_at": utc_now(),
-        "started_epoch": started_epoch,
-        "recorder_pid": process.pid,
-        "recorder_identity": identity,
+        "started_epoch": time.time(),
+        "recorder_pid": None,
+        "recorder_identity": None,
         "recorder_command": command,
         "raw_video": str(raw_video),
         "annotations": [],
     }
+
+    if supervised:
+        (session_dir / RECORDER_COMMAND_NAME).write_text(json.dumps(command))
+        atomic_write_json(session_path, session)
+        supervisor_command = [sys.executable, str(Path(__file__).resolve()), "supervise", str(session_path), "--grace", "3"]
+        with (session_dir / "supervisor.log").open("wb") as log_file:
+            supervisor = spawn_detached(supervisor_command, log_file, environment)
+        session["started_epoch"] = time.time()
+        supervisor_identity = process_identity(supervisor.pid)
+        with session_lock(session_path):
+            current = load_session(session_path)
+            current["supervisor_pid"] = supervisor.pid
+            current["supervisor_identity"] = supervisor_identity
+            current["started_epoch"] = session["started_epoch"]
+            atomic_write_json(session_path, current)
+        if supervisor_identity is None:
+            _mark_startup_failed(session_path, "supervisor exited before its identity could be captured")
+        try:
+            session = wait_for_supervised_recorder(session_path, supervisor_identity, raw_video)
+        except EvidenceError as error:
+            with contextlib.suppress(EvidenceError):
+                stop_supervised(load_session(session_path), session_dir, timeout_seconds=10.0)
+            _mark_startup_failed(session_path, str(error))
+        print(json.dumps({"session": str(session_path), "pid": session["recorder_pid"], "source": source, "mode": "supervised"}))
+        return 0
+
+    with log_path.open("wb") as log_file:
+        process = spawn_detached(command, log_file, environment)
+    session["started_epoch"] = time.time()
+    identity = process_identity(process.pid)
+    session["recorder_pid"] = process.pid
+    session["recorder_identity"] = identity
     atomic_write_json(session_path, session)
     if identity is None:
-        session["status"] = "startup_failed"
-        session["failed_at"] = utc_now()
-        session["failure"] = "recorder exited before its identity could be captured"
-        atomic_write_json(session_path, session)
-        raise EvidenceError(session["failure"])
+        _mark_startup_failed(session_path, "recorder exited before its identity could be captured")
     try:
         wait_for_recorder(identity, raw_video, log_path)
     except Exception as error:
@@ -709,17 +878,22 @@ def command_start(args: argparse.Namespace) -> int:
             stop_recorder(identity)
         except EvidenceError as stop_error:
             stop_failure = str(stop_error)
+        message = str(error) if isinstance(error, EvidenceError) else f"recorder startup failed: {error}"
+        _mark_startup_failed(session_path, message, stop_failure)
+    print(json.dumps({"session": str(session_path), "pid": process.pid, "source": source, "mode": "direct"}))
+    return 0
+
+
+def _mark_startup_failed(session_path: Path, failure: str, stop_failure: str | None = None) -> None:
+    with session_lock(session_path):
+        session = load_session(session_path)
         session["status"] = "startup_failed"
         session["failed_at"] = utc_now()
-        session["failure"] = str(error)
+        session["failure"] = failure
         if stop_failure:
             session["stop_failure"] = stop_failure
         atomic_write_json(session_path, session)
-        if isinstance(error, EvidenceError):
-            raise
-        raise EvidenceError(f"recorder startup failed: {error}") from error
-    print(json.dumps({"session": str(session_path), "pid": process.pid, "source": source}))
-    return 0
+    raise EvidenceError(failure)
 
 
 def command_annotate(args: argparse.Namespace) -> int:
@@ -946,10 +1120,13 @@ def finalize_session(session_path: Path) -> int:
     status = session.get("status")
     if status == "recording":
         try:
-            identity = session.get("recorder_identity")
-            if not isinstance(identity, dict):
-                raise EvidenceError("session has no validated recorder identity; refusing to signal a PID")
-            stop_recorder(identity)
+            if session.get("mode") == "supervised":
+                stop_supervised(session, session_path.parent)
+            else:
+                identity = session.get("recorder_identity")
+                if not isinstance(identity, dict):
+                    raise EvidenceError("session has no validated recorder identity; refusing to signal a PID")
+                stop_recorder(identity)
         except EvidenceError as error:
             # The recorder can no longer be signalled safely (PID reused, identity
             # missing, or it survived the last-resort kill). Persist that instead of
@@ -1070,6 +1247,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     stop = subparsers.add_parser("stop", help="Stop, render, and verify evidence")
     stop.add_argument("session")
+
+    supervise = subparsers.add_parser("supervise", help=argparse.SUPPRESS)  # internal: launched by `start`
+    supervise.add_argument("session")
+    supervise.add_argument("--grace", type=float, default=3.0)
     return parser
 
 
@@ -1084,6 +1265,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_annotate(args)
         if args.command == "stop":
             return command_stop(args)
+        if args.command == "supervise":
+            return command_supervise(args)
         raise AssertionError(f"Unhandled command: {args.command}")
     except EvidenceError as error:
         print(f"error: {error}", file=sys.stderr)

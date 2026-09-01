@@ -2,10 +2,13 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+shutil_which_original = shutil.which
 
 import pytest
 
@@ -18,14 +21,18 @@ EVIDENCE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EVIDENCE)
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
+        env={**os.environ, **(env or {})},
     )
+
+
+SUPERVISED_ENV = {"EVIDENCE_PLATFORM": "darwin"}  # run the non-Linux (supervisor) code path on this host
 
 
 def test_doctor_reports_required_executables_as_json():
@@ -499,7 +506,7 @@ def test_default_source_follows_platform_and_environment(monkeypatch: pytest.Mon
     assert EVIDENCE.resolve_source("test") == "test"
 
 
-def test_ps_and_windows_identity_parsers():
+def test_ps_identity_parser_and_strict_matching():
     ps = EVIDENCE.parse_ps_identity(4242, "  3100 Tue Sep  1 16:35:01 2026 S+\n")
     assert ps == {"pid": 4242, "process_group_id": 3100, "started": "Tue Sep  1 16:35:01 2026"}
     assert EVIDENCE.parse_ps_identity(4242, "") is None
@@ -507,51 +514,167 @@ def test_ps_and_windows_identity_parsers():
     with pytest.raises(EVIDENCE.EvidenceError, match="cannot parse"):
         EVIDENCE.parse_ps_identity(4242, "garbage")
 
-    win = EVIDENCE.parse_windows_identity(77, "133700000000000000|4321\r\n")
-    assert win == {"pid": 77, "creation_filetime": 133700000000000000, "parent_pid": 4321}
-    assert EVIDENCE.parse_windows_identity(77, "") is None
-    with pytest.raises(EVIDENCE.EvidenceError, match="cannot parse"):
-        EVIDENCE.parse_windows_identity(77, "not|a|number")
-
     stored = {"pid": 4242, "process_group_id": 3100, "started": "Tue Sep  1 16:35:01 2026"}
     assert EVIDENCE.identity_matches(stored, dict(stored))
     assert not EVIDENCE.identity_matches(stored, {**stored, "started": "Tue Sep  1 16:35:02 2026"})
     assert not EVIDENCE.identity_matches({"pid": 4242}, stored), "a live identity with extra fields must not match a sparse record"
 
 
-def test_posix_stop_path_escalates_and_refuses_reused_pid(monkeypatch: pytest.MonkeyPatch):
-    """Exercise the macOS/BSD code path (ps-based identity, os.kill) on this host."""
-    monkeypatch.setattr(EVIDENCE, "platform_name", lambda: "darwin")
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import signal,time; signal.signal(signal.SIGINT, signal.SIG_IGN); "
-            "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)",
-        ],
-        start_new_session=True,
-    )
+def test_supervised_mode_records_annotates_and_stops_through_the_supervisor(tmp_path: Path):
+    started = run_cli("start", "--output", str(tmp_path), "--source", "test", "--geometry", "320x180", env=SUPERVISED_ENV)
+    assert started.returncode == 0, started.stderr
+    payload = json.loads(started.stdout)
+    assert payload["mode"] == "supervised"
+    session_path = Path(payload["session"])
+    session = json.loads(session_path.read_text())
+    assert session["platform"] == "darwin" and session["mode"] == "supervised"
+    assert set(session["supervisor_identity"]) == {"pid", "process_group_id", "started"}
+    assert session["recorder_identity"]["pid"] == payload["pid"]
+    assert EVIDENCE.process_identity(payload["pid"]) is not None  # ffmpeg is running under the supervisor
+
+    assert run_cli("annotate", str(session_path), "--type", "setup", "--message", "Supervised run", env=SUPERVISED_ENV).returncode == 0
+    time.sleep(1.2)
+    stopped = run_cli("stop", str(session_path), env=SUPERVISED_ENV)
+    assert stopped.returncode == 0, stopped.stderr
+    result = json.loads(stopped.stdout)
+    assert result["verified"] is True
+
+    exit_record = json.loads((session_path.parent / "recorder-exit.json").read_text())
+    assert exit_record["requested"] is True
+    assert exit_record["returncode"] is not None
+    deadline = time.time() + 5
+    while time.time() < deadline and EVIDENCE.process_identity(session["supervisor_identity"]["pid"]) is not None:
+        time.sleep(0.1)
+    assert EVIDENCE.process_identity(session["supervisor_identity"]["pid"]) is None, "supervisor exits after the recorder"
+    assert EVIDENCE.process_identity(payload["pid"]) is None
+
+
+def test_supervised_stop_never_signals_by_pid_when_supervisor_is_gone(tmp_path: Path):
+    started = run_cli("start", "--output", str(tmp_path), "--source", "test", "--geometry", "320x180", env=SUPERVISED_ENV)
+    assert started.returncode == 0, started.stderr
+    payload = json.loads(started.stdout)
+    session_path = Path(payload["session"])
+    session = json.loads(session_path.read_text())
+    supervisor_pid = session["supervisor_identity"]["pid"]
+    recorder_pid = payload["pid"]
+    time.sleep(1.0)
+
+    os.kill(supervisor_pid, 9)  # orphan the recorder
+    time.sleep(0.3)
+    assert EVIDENCE.process_identity(recorder_pid) is not None
+
     try:
-        time.sleep(0.2)
-        identity = EVIDENCE.process_identity(process.pid)
-        assert identity is not None and set(identity) == {"pid", "process_group_id", "started"}
-        assert identity["process_group_id"] == process.pid
+        stopped = run_cli("stop", str(session_path), env=SUPERVISED_ENV)
+        assert stopped.returncode != 0
+        assert "still running" in stopped.stderr and "recorder_lost" in stopped.stderr
+        assert EVIDENCE.process_identity(recorder_pid) is not None, "stop must not signal the orphaned recorder by PID"
+        assert json.loads(session_path.read_text())["status"] == "recorder_lost"
 
-        sent: list[int] = []
-        real_kill = os.kill
-        monkeypatch.setattr(EVIDENCE.os, "kill", lambda pid, sig: sent.append(sig))
-        with pytest.raises(EVIDENCE.EvidenceError, match="identity does not match"):
-            EVIDENCE.stop_recorder({**identity, "started": "Thu Jan  1 00:00:00 1970"})
-        assert sent == []
-        monkeypatch.setattr(EVIDENCE.os, "kill", real_kill)
-
-        EVIDENCE.stop_recorder(identity, grace_seconds=0.2)
-        assert process.wait(timeout=2) == -9
-        assert EVIDENCE.process_identity(process.pid) is None
+        retry = run_cli("stop", str(session_path), env=SUPERVISED_ENV)
+        assert retry.returncode != 0 and "still running" in retry.stderr
     finally:
-        if process.poll() is None:
-            os.killpg(process.pid, 9)
-            process.wait(timeout=2)
+        os.kill(recorder_pid, 9)
+    time.sleep(0.3)
+
+    finalized = run_cli("stop", str(session_path), env=SUPERVISED_ENV)
+    assert finalized.returncode == 0, finalized.stderr
+    assert json.loads(finalized.stdout)["verified"] is True
+
+
+def test_supervised_recorder_crash_is_recorded_and_finalizes(tmp_path: Path):
+    started = run_cli("start", "--output", str(tmp_path), "--source", "test", "--geometry", "320x180", env=SUPERVISED_ENV)
+    assert started.returncode == 0, started.stderr
+    payload = json.loads(started.stdout)
+    session_path = Path(payload["session"])
+    time.sleep(1.2)
+    os.kill(payload["pid"], 9)
+    deadline = time.time() + 5
+    exit_record = session_path.parent / "recorder-exit.json"
+    while time.time() < deadline and not exit_record.exists():
+        time.sleep(0.1)
+    record = json.loads(exit_record.read_text())
+    assert record["requested"] is False and record["returncode"] == -9
+
+    stopped = run_cli("stop", str(session_path), env=SUPERVISED_ENV)
+    assert stopped.returncode == 0, stopped.stderr
+    assert json.loads(stopped.stdout)["verified"] is True
+
+
+def test_stop_recorder_is_linux_only():
+    with pytest.raises(EVIDENCE.EvidenceError, match="only supported on Linux"):
+        os.environ["EVIDENCE_PLATFORM"] = "darwin"
+        try:
+            EVIDENCE.stop_recorder({"pid": os.getpid()})
+        finally:
+            del os.environ["EVIDENCE_PLATFORM"]
+
+
+def test_wayland_readiness_requires_a_wlroots_compositor(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(EVIDENCE, "platform_name", lambda: "linux")
+    monkeypatch.setattr(EVIDENCE, "ffmpeg_has_device", lambda name: False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    for name in ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    tools = {"wf-recorder": "/usr/bin/wf-recorder"}
+    monkeypatch.setattr(EVIDENCE.shutil, "which", lambda name: tools.get(name))
+
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME")
+    status = EVIDENCE.capture_status()
+    assert status["sources"]["wayland"]["available"] is False
+    assert "GNOME/KDE" in status["sources"]["wayland"]["reason"]
+    assert status["default_source"] is None and status["capture_ready"] is False
+
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "KDE")
+    assert EVIDENCE.capture_status()["sources"]["wayland"]["available"] is False
+
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "sway")
+    assert EVIDENCE.capture_status()["default_source"] == "wayland"
+
+    tools["wayland-info"] = "/usr/bin/wayland-info"
+    monkeypatch.setattr(
+        EVIDENCE.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="interface: 'wl_output'\n", stderr=""),
+    )
+    unsupported = EVIDENCE.capture_status()["sources"]["wayland"]
+    assert unsupported["available"] is False and "wayland-info does not list" in unsupported["reason"]
+
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")  # the protocol probe outranks the desktop heuristic
+    monkeypatch.setattr(
+        EVIDENCE.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout=f"interface: '{EVIDENCE.WLR_SCREENCOPY_PROTOCOL}'\n", stderr=""),
+    )
+    assert EVIDENCE.capture_status()["sources"]["wayland"]["available"] is True
+
+
+def test_geometry_and_offset_are_validated_before_the_session_directory_exists(tmp_path: Path):
+    for bad_offset in ("10", "1,2,3", "a,b", "10;20"):
+        result = run_cli("start", "--output", str(tmp_path), "--source", "test", "--geometry", "320x180", "--offset", bad_offset)
+        assert result.returncode == 2, result.stdout
+        assert "--offset must be X,Y" in result.stderr and "Traceback" not in result.stderr
+    for bad_geometry in ("320", "320x", "0x180", "321x180", "wide"):
+        result = run_cli("start", "--output", str(tmp_path), "--source", "test", "--geometry", bad_geometry)
+        assert result.returncode == 2, result.stdout
+        assert "--geometry" in result.stderr and "Traceback" not in result.stderr
+    assert list(tmp_path.iterdir()) == [], "a rejected start must not leave a session directory behind"
+
+    assert EVIDENCE.parse_offset(None) == (0, 0)
+    assert EVIDENCE.parse_offset(" -5 , 20 ") == (-5, 20)
+    assert EVIDENCE.parse_geometry(" 1920X1080 ") == "1920x1080"
+    raw = tmp_path / "raw.ts"
+    os.environ["EVIDENCE_PLATFORM"] = "windows"
+    try:
+        for source in ("gdigrab", "wayland"):
+            with pytest.raises(EVIDENCE.EvidenceError, match="--offset must be X,Y"):
+                if source == "wayland":
+                    os.environ["EVIDENCE_PLATFORM"] = "linux"
+                    EVIDENCE.shutil.which = lambda name, _w=EVIDENCE.shutil.which: "/usr/bin/wf-recorder" if name == "wf-recorder" else _w(name)
+                EVIDENCE.recorder_command(_start_args(source, geometry="800x600", offset="1,2,3"), raw, source)
+    finally:
+        del os.environ["EVIDENCE_PLATFORM"]
+        EVIDENCE.shutil.which = shutil_which_original
 
 
 def test_unclean_recorder_exit_still_finalizes_from_mpegts(tmp_path: Path):
