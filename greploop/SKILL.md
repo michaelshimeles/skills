@@ -20,6 +20,7 @@ Iteratively fix a PR/MR/CL until Greptile gives a perfect review: 5/5 confidence
 ## Inputs
 
 - **PR/MR/CL number** (optional): If not provided, detect the PR/MR for the current branch, or the default pending changelist for p4.
+- **`--max-iterations N`** (optional, default **10**): cap on review-fix-push cycles before the loop stops and reports the current state. Raise it for large PRs where Greptile keeps surfacing new findings; lower it to bound cost.
 
 ## Instructions
 
@@ -75,7 +76,7 @@ Key field differences:
 
 ### 2. Loop
 
-Repeat the following cycle. **Max 5 iterations** to avoid runaway loops.
+Repeat the following cycle at most **`--max-iterations`** times (default **10**) to avoid runaway loops.
 
 #### A. Trigger Greptile review
 
@@ -318,7 +319,7 @@ Filter to comments from the Greptile bot user that have not been marked as resol
 Stop the loop if **any** of these are true:
 
 - Confidence score is **5/5** AND there are **zero unresolved comments**
-- Max iterations reached (report current state)
+- `--max-iterations` reached (report current state)
 
 #### D. Fix actionable comments
 
@@ -427,10 +428,10 @@ Greploop complete.
   Remaining:     0
 ```
 
-If not fully resolved:
+If not fully resolved (`<N>` is the effective cap — the `--max-iterations` value supplied, or 10 by default):
 
 ```
-Greploop stopped after 5 iterations.
+Greploop stopped after <N> iterations (--max-iterations <N>).
   Platform:      GitLab
   Confidence:    4/5
   Resolved:      12 comments
