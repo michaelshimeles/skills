@@ -39,7 +39,7 @@ Use it whenever a change needs verifiable evidence that it works, instead of pro
 
 ### [greploop](greploop/SKILL.md)
 
-Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats (max 5 iterations).
+Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats, up to `--max-iterations` cycles (default 10).
 
 Use it when a PR should be fully optimized against Greptile's code review standards before merge.
 
