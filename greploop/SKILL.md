@@ -428,10 +428,10 @@ Greploop complete.
   Remaining:     0
 ```
 
-If not fully resolved:
+If not fully resolved (`<N>` is the effective cap — the `--max-iterations` value supplied, or 10 by default):
 
 ```
-Greploop stopped after 10 iterations (--max-iterations).
+Greploop stopped after <N> iterations (--max-iterations <N>).
   Platform:      GitLab
   Confidence:    4/5
   Resolved:      12 comments
