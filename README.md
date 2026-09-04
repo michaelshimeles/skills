@@ -65,9 +65,20 @@ Use it when:
 
 Includes harness deltas for Claude Code and Cursor, which manage worktrees themselves.
 
+### [unslop](unslop/SKILL.md)
+
+Edits prose to remove AI tells and put a human voice back in. It names 31 patterns to catch (puffery, filler, hedging, chatbot phrases, em dashes, colons as connectors, bold and emoji overuse, abstract metaphor nouns, passive voice) and a short checklist for adding opinion and rhythm, applied as a four-step loop: scan, rewrite, add soul, self-audit.
+
+Use it when:
+
+- Writing anything a person will read: commit messages, PR titles and bodies, docs, README edits, code comments, chat replies
+- Cleaning up existing text that reads machine-made
+
+> Vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (MIT, license included in the folder). One change from upstream: the `disable-model-invocation: true` frontmatter line is dropped so agents apply the skill on their own instead of waiting for a typed `/unslop`. Put it back if you want slash-command-only behavior.
+
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow — isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`). Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
+[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow — isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`), with `unslop` applied to everything written for humans along the way. Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
 
 ## Installation
 

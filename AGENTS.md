@@ -35,6 +35,15 @@ Ship-beat notes:
 - The default upload host (0x0.st) is public — fine for ordinary UI shots;
   pass `--upload-url` for anything sensitive.
 
+## Writing for humans
+
+Run `/unslop` over anything a person will read, before you commit, post, or
+send it: commit messages, the PR title and body, README and doc edits, code
+comments, and the closing reply. It strips AI tells (em dashes, filler,
+hedging, chatbot phrases, puffery, bold-label lists) and replaces fancy
+words with plain ones and passive voice with active. Apply it to text you
+wrote or changed, not to prose you didn't touch.
+
 ## Multi-agent rules
 
 - Never commit directly to `main`.
@@ -63,7 +72,7 @@ Ship-beat notes:
    branch, `--force-with-lease`).
 6. Open the PR. The body must explain what changed, how it was tested (every
    claim backed by evidence), before/after proof, and any risks or follow-up
-   work.
+   work. Run the title and body through `/unslop` before posting.
 7. Run `/greploop` (or `/greploop-apps`) until **5/5 with zero unresolved
    comments**.
 8. End by presenting the PR URL.
@@ -86,3 +95,4 @@ infrastructure (stubs, fixtures), and anything that can't be tested locally.
 | `before-and-after` | this repo, vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (or `npx skills add vercel-labs/before-and-after`) |
 | `greploop` | this repo, vendored from [greptileai/skills](https://github.com/greptileai/skills) |
 | `greploop-apps` | this repo (local variant of greploop for huge PRs; no separate upstream) |
+| `unslop` | this repo, vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) with `disable-model-invocation` dropped so agents can apply it unprompted |
