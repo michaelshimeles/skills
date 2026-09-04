@@ -37,6 +37,20 @@ Use it whenever a change needs verifiable evidence that it works, instead of pro
 
 > The recorder needs `ffmpeg`/`ffprobe` built with `libx264` and the `ass` filter, plus a screen-capture source: X11 (`DISPLAY`) or wlroots Wayland (`wf-recorder`; GNOME/KDE are not supported) on Linux, Screen Recording permission on macOS, any standard ffmpeg on Windows. `python3 scripts/evidence.py doctor` reports both. The raw capture is MPEG-TS, so a crashed or hard-killed recorder still yields usable evidence. The headless path needs only a running app and a scriptable browser (Playwright via npx). Posting evidence requires the `gh` CLI (or equivalent). `tests/test_evidence.py` smoke-tests the recorder end to end with a synthetic video source (`python3 -m pytest tests/ -q`).
 
+### [fix-video-evidence](fix-video-evidence/SKILL.md)
+
+Records the before/after of a bug-fix cycle as two short `.webm` videos using Playwright's built-in `recordVideo`, then attaches them to the PR. One reproduction script, two runs - `PHASE=before` on the pre-fix commit, `PHASE=after` on the post-fix commit - with the flow identical between phases so only the assertion flips.
+
+Use it when:
+
+- A bug is temporal or interactive and a still screenshot misses it (jank, focus jump, loading state that never resolves, off-screen redirect)
+- You want video evidence of a fix without the full computer-use + Python + FFmpeg stack `evidence-driven-testing` requires
+- You already have Playwright in the target repo (or can add it)
+
+Portable mode is the default: the helper prints a copy-paste markdown block and a 5-second drag-drop recipe (GitHub inlines the `.webm` in the comment). R2 auto-upload is opt-in via env vars, with a `setup-r2.sh` wizard that walks you through Cloudflare's free tier in ~5 minutes and tests the actual upload before declaring success.
+
+> Complementary to `evidence-driven-testing`: use that skill for full computer-use-driven UI testing with annotated MP4 output; use this one for the narrower "record the before/after of one fix" workflow when Playwright is enough.
+
 ### [greploop](greploop/SKILL.md)
 
 Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats, up to `--max-iterations` cycles (default 10).
