@@ -2,11 +2,11 @@
 
 A collection of [agent skills](https://code.claude.com/docs/en/skills) for Claude Code. Each skill is a folder containing a `SKILL.md` with frontmatter (name, description) and instructions that Claude loads on demand when the task matches.
 
-## Available Skills
+## Available skills
 
 ### [before-and-after](before-and-after/SKILL.md)
 
-Captures before/after screenshots of web pages or elements and outputs a PR-ready markdown comparison table, driving the `@vercel/before-and-after` CLI.
+Captures before/after screenshots of web pages or elements and outputs a PR-ready markdown comparison table. It drives the `@vercel/before-and-after` CLI.
 
 Use it when:
 
@@ -14,7 +14,7 @@ Use it when:
 - You want a `| Before | After |` table generated and uploaded in one step
 - Comparing two URLs, two existing images, or a mix of both
 
-> Vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (PolyForm Shield 1.0.0 — license included in the folder). Install the CLI with `npm i -g @vercel/before-and-after agent-browser`.
+> Vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (PolyForm Shield 1.0.0, license included in the folder). Install the CLI with `npm i -g @vercel/before-and-after agent-browser`.
 
 ### [code-structure](code-structure/SKILL.md)
 
@@ -31,7 +31,7 @@ Includes a migration checklist for extracting shared logic safely and a table of
 
 ### [evidence-driven-testing](evidence-driven-testing/SKILL.md)
 
-Records visual proof while testing UI behavior — the agent drives the app live via computer use (or [cua-driver](https://github.com/trycua/cua) when the harness has no computer-use tools) while the bundled recorder captures the session — then posts the video and a results summary to the PR and tracker issue. The recorder (`scripts/evidence.py`, Python 3 + FFmpeg) runs on Linux, macOS, and Windows and has `doctor`, `start`, `annotate`, and `stop` commands: annotations are timestamped as the agent tests, burned into `evidence.mp4` on stop, and summarized in a generated `report.md` and `manifest.json`. Headless environments swap the recorder for scripted screenshots and Playwright captures; non-UI changes still get evidence (measured numbers, output pairs, transcript excerpts).
+Records visual proof while testing UI behavior. The agent drives the app live via computer use (or [cua-driver](https://github.com/trycua/cua) when the harness has no computer-use tools) while the bundled recorder captures the session, then posts the video and a results summary to the PR and tracker issue. The recorder (`scripts/evidence.py`, Python 3 + FFmpeg) runs on Linux, macOS, and Windows and has `doctor`, `start`, `annotate`, and `stop` commands. It timestamps each annotation as the agent tests, burns them into `evidence.mp4` on stop, and summarizes them in a generated `report.md` and `manifest.json`. Headless environments swap the recorder for scripted screenshots and Playwright captures; non-UI changes still get evidence (measured numbers, output pairs, transcript excerpts).
 
 Use it whenever a change needs verifiable evidence that it works, instead of prose claims.
 
@@ -41,21 +41,21 @@ Use it whenever a change needs verifiable evidence that it works, instead of pro
 
 Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats, up to `--max-iterations` cycles (default 10).
 
-Use it when a PR should be fully optimized against Greptile's code review standards before merge.
+Use it to get a PR to a clean Greptile review before merge.
 
-> Vendored from [greptileai/skills](https://github.com/greptileai/skills) (MIT — license included in the folder). Requires Greptile installed on the repo and an authenticated `gh`/`glab`/`p4` CLI.
+> Vendored from [greptileai/skills](https://github.com/greptileai/skills) (MIT, license included in the folder). Requires Greptile installed on the repo and an authenticated `gh`/`glab`/`p4` CLI.
 
 ### [greploop-apps](greploop-apps/SKILL.md)
 
-Identical loop to greploop, but triggers reviews by tagging `@greptile-apps`, which bypasses Greptile's file-count limit on huge PRs that the plain `@greptile` mention refuses to review — including a fallback that polls Greptile's edited summary comment when no check run appears.
+The same loop as greploop, but it triggers reviews by tagging `@greptile-apps`, which bypasses Greptile's file-count limit on huge PRs that the plain `@greptile` mention refuses to review. When no check run appears, it falls back to polling Greptile's edited summary comment.
 
 Use it when greploop's trigger gets "Too many files changed for review".
 
-> Local variant derived from greptileai's greploop (MIT — license included in the folder); no separate upstream.
+> Local variant derived from greptileai's greploop (MIT, license included in the folder); no separate upstream.
 
 ### [new-feature](new-feature/SKILL.md)
 
-Starts every new task in an isolated Git worktree branched from `origin/main` — unique task naming, a scope check against open PRs, fresh dependency installs, and cleanup after merge — so multiple agents can work on the same repo in parallel without conflicts.
+Starts every new task in an isolated Git worktree branched from `origin/main` so multiple agents can work on the same repo in parallel without conflicts. It covers unique task naming, a scope check against open PRs, fresh dependency installs, and cleanup after merge.
 
 Use it when:
 
@@ -65,9 +65,20 @@ Use it when:
 
 Includes harness deltas for Claude Code and Cursor, which manage worktrees themselves.
 
+### [unslop](unslop/SKILL.md)
+
+Edits prose to remove AI tells and put a human voice back in. It names 31 patterns to catch (puffery, filler, hedging, chatbot phrases, em dashes, colons as connectors, bold and emoji overuse, abstract metaphor nouns, passive voice) and a short checklist for adding opinion and rhythm, applied as a four-step loop: scan, rewrite, add soul, self-audit.
+
+Use it when:
+
+- Writing anything a person will read: commit messages, PR titles and bodies, docs, README edits, code comments, chat replies
+- Cleaning up existing text that reads machine-made
+
+> Vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (MIT, license included in the folder). The body matches upstream; the frontmatter has two edits so agents apply the skill on their own instead of waiting for a typed `/unslop`. We dropped the `disable-model-invocation: true` line, and the description now names the trigger (text you write or edit for a human reader) in place of upstream's "any writing. Must always apply.", so auto-invocation matches the scope `AGENTS.md` gives it. Restore the flag if you want slash-command-only behavior.
+
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow — isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`). Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
+[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow: isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`), with `unslop` applied to everything written for humans along the way. Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
 
 ## Installation
 
@@ -83,8 +94,8 @@ cp -r code-structure /path/to/project/.claude/skills/
 
 Claude Code picks up the skill automatically and invokes it when a task matches the skill's description. You can also invoke one explicitly with `/code-structure` or `/evidence-driven-testing`.
 
-## Adding a New Skill
+## Adding a new skill
 
 1. Create a folder named after the skill (kebab-case).
-2. Add a `SKILL.md` with `name` and `description` frontmatter — the description is what Claude uses to decide when the skill applies, so make it trigger-focused ("Use when...").
+2. Add a `SKILL.md` with `name` and `description` frontmatter. The description is what Claude uses to decide when the skill applies, so make it trigger-focused ("Use when...").
 3. Keep instructions concise and actionable; link out to reference files in the folder if they get long.
