@@ -95,4 +95,4 @@ infrastructure (stubs, fixtures), and anything that can't be tested locally.
 | `before-and-after` | this repo, vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (or `npx skills add vercel-labs/before-and-after`) |
 | `greploop` | this repo, vendored from [greptileai/skills](https://github.com/greptileai/skills) |
 | `greploop-apps` | this repo (local variant of greploop for huge PRs; no separate upstream) |
-| `unslop` | this repo, vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) with `disable-model-invocation` dropped so agents can apply it unprompted |
+| `unslop` | this repo, vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop); frontmatter edited so agents apply it unprompted (`disable-model-invocation` dropped, description scoped to text the agent writes or edits for people), body untouched |

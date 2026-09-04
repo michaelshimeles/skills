@@ -74,7 +74,7 @@ Use it when:
 - Writing anything a person will read: commit messages, PR titles and bodies, docs, README edits, code comments, chat replies
 - Cleaning up existing text that reads machine-made
 
-> Vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (MIT, license included in the folder). One change from upstream: the `disable-model-invocation: true` frontmatter line is dropped so agents apply the skill on their own instead of waiting for a typed `/unslop`. Put it back if you want slash-command-only behavior.
+> Vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (MIT, license included in the folder). Two frontmatter changes from upstream, both so agents apply the skill on their own instead of waiting for a typed `/unslop`: the `disable-model-invocation: true` line is dropped, and the description names the trigger (text you write or edit for a human reader) in place of upstream's "any writing. Must always apply.", so auto-invocation matches the scope `AGENTS.md` gives it. The body is untouched. Restore the flag if you want slash-command-only behavior.
 
 ## Workflow
 
