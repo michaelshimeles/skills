@@ -18,7 +18,10 @@ Use it when:
 
 ### [code-structure](code-structure/SKILL.md)
 
-Service layer architecture guidance. Enforces a two-layer separation where **actions** orchestrate domain rules (the "why/when") and a **service layer** centralizes reusable operational mechanics (the "how").
+Service layer architecture guidance. Prefers actions for orchestration and
+services for reusable operations when a project has no established convention.
+Preserves existing persistence and transaction boundaries, and permits a
+single-caller abstraction when it provides a concrete benefit.
 
 Use it when:
 
@@ -27,19 +30,23 @@ Use it when:
 - A bug fix in one flow doesn't propagate to others doing the same thing
 - Adding a feature that shares mechanics with existing ones
 
-Includes a migration checklist for extracting shared logic safely and a table of anti-patterns to avoid (god services, leaky services, over-abstraction).
+Includes a migration checklist for extracting shared logic without changing policy or transaction behavior.
 
 ### [evidence-driven-testing](evidence-driven-testing/SKILL.md)
 
 Records visual proof while testing UI behavior. The agent drives the app live via computer use (or [cua-driver](https://github.com/trycua/cua) when the harness has no computer-use tools) while the bundled recorder captures the session, then posts the video and a results summary to the PR and tracker issue. The recorder (`scripts/evidence.py`, Python 3 + FFmpeg) runs on Linux, macOS, and Windows and has `doctor`, `start`, `annotate`, and `stop` commands. It timestamps each annotation as the agent tests, burns them into `evidence.mp4` on stop, and summarizes them in a generated `report.md` and `manifest.json`. Headless environments swap the recorder for scripted screenshots and Playwright captures; non-UI changes still get evidence (measured numbers, output pairs, transcript excerpts).
 
-Use it whenever a change needs verifiable evidence that it works, instead of prose claims.
+Use it when changed runtime behavior needs observable verification. Documentation-only work needs content checks and verification of runnable examples.
 
-> The recorder needs `ffmpeg`/`ffprobe` built with `libx264` and the `ass` filter, plus a screen-capture source: X11 (`DISPLAY`) or wlroots Wayland (`wf-recorder`; GNOME/KDE are not supported) on Linux, Screen Recording permission on macOS, any standard ffmpeg on Windows. `python3 scripts/evidence.py doctor` reports both. The raw capture is MPEG-TS, so a crashed or hard-killed recorder still yields usable evidence. The headless path needs only a running app and a scriptable browser (Playwright via npx). Posting evidence requires the `gh` CLI (or equivalent). `tests/test_evidence.py` smoke-tests the recorder end to end with a synthetic video source (`python3 -m pytest tests/ -q`).
+> The recorder needs `ffmpeg`/`ffprobe` with `libx264` and the `ass` filter, plus a supported desktop capture source. Run `python3 scripts/evidence.py doctor` from the skill directory to check availability. The headless helper, `scripts/run-playwright.sh`, uses Node 20+ and npm to install the pinned Playwright dependency lockfile beside a self-contained capture script in a temporary directory. It keeps dependencies out of the target project. Posting evidence requires an authorized destination and the relevant upload tool.
 
 ### [greploop](greploop/SKILL.md)
 
-Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats, up to `--max-iterations` cycles (default 10).
+Addresses Greptile feedback on a PR, MR, or shelved changelist. Targets a fresh
+5/5 review of the current revision with no unresolved actionable findings,
+within `--max-iterations` cycles, default 10. Stops and reports partial results
+at the cap, on timeout, or when the integration cannot verify the revision.
+The GitHub helper records each trigger and rejects stale checks and summaries.
 
 Use it to get a PR to a clean Greptile review before merge.
 
@@ -47,23 +54,28 @@ Use it to get a PR to a clean Greptile review before merge.
 
 ### [greploop-apps](greploop-apps/SKILL.md)
 
-The same loop as greploop, but it triggers reviews by tagging `@greptile-apps`, which bypasses Greptile's file-count limit on huge PRs that the plain `@greptile` mention refuses to review. When no check run appears, it falls back to polling Greptile's edited summary comment.
+A compatibility entrypoint for `greploop --trigger @greptile-apps`. It uses
+the same workflow and tested GitHub helper, including summaries that update
+without a new check run. Install it together with `greploop`.
 
 Use it when greploop's trigger gets "Too many files changed for review".
 
-> Local variant derived from greptileai's greploop (MIT, license included in the folder); no separate upstream.
+> Local entrypoint derived from greptileai's greploop. MIT license included.
 
 ### [new-feature](new-feature/SKILL.md)
 
-Starts every new task in an isolated Git worktree branched from `origin/main` so multiple agents can work on the same repo in parallel without conflicts. It covers unique task naming, a scope check against open PRs, fresh dependency installs, and cleanup after merge.
+Isolates repository edits in a Git worktree based on `origin/main`, while
+preserving a worktree already assigned to the task. It checks whether overlapping
+PRs conflict in behavior, allows independent edits, and leaves other tasks'
+work untouched. Read-only reviews and investigations need no new worktree.
 
 Use it when:
 
-- Starting any new feature, fix, or task, before writing code
+- Starting a feature, fix, or documentation edit
 - Multiple agents (or sessions) work the same repository concurrently
 - You need a consistent branch-per-task convention with safe cleanup
 
-Includes harness deltas for Claude Code and Cursor, which manage worktrees themselves.
+Checks actual worktree ownership instead of assuming the editor created one.
 
 ### [unslop](unslop/SKILL.md)
 
@@ -78,7 +90,11 @@ Use it when:
 
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow: isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`), with `unslop` applied to everything written for humans along the way. Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
+[`AGENTS.md`](AGENTS.md) selects the applicable steps for each task: isolate
+edits, follow the project's architecture, verify the changed behavior, and ship
+when the task calls for it. Read-only work skips shipping; small documentation
+edits use content checks. Code and executable workflow changes use a bounded
+Greptile review loop. Apply `unslop` to prose you write or edit along the way.
 
 ## Installation
 
@@ -93,6 +109,22 @@ cp -r code-structure /path/to/project/.claude/skills/
 ```
 
 Claude Code picks up the skill automatically and invokes it when a task matches the skill's description. You can also invoke one explicitly with `/code-structure` or `/evidence-driven-testing`.
+
+The alternate Greptile entrypoint requires both folders:
+
+```bash
+cp -r greploop greploop-apps ~/.claude/skills/
+```
+
+## Checks
+
+Run `python3 -m pytest tests/ -q` and `git diff --check`. The recorder tests
+require Python 3.10+, pytest, ffmpeg, and ffprobe with libx264 and the ass filter.
+Workflow tests cover review freshness, polling, and isolated Playwright module
+resolution. The Playwright runner tests require Node and Bash and stub npm
+downloads. For changes to that helper, also run a real Chromium capture using
+the documented command. These local tests do not exercise live upload hosts
+or every native desktop capture backend.
 
 ## Adding a new skill
 
