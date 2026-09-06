@@ -38,7 +38,7 @@ Records visual proof while testing UI behavior. The agent drives the app live vi
 
 Use it when changed runtime behavior needs observable verification. Documentation-only work needs content checks and verification of runnable examples.
 
-> The recorder needs `ffmpeg`/`ffprobe` with `libx264` and the `ass` filter, plus a supported desktop capture source. Run `python3 scripts/evidence.py doctor` from the skill directory to check availability. The headless helper, `scripts/run-playwright.sh`, uses Node and npm to install Playwright beside a self-contained capture script in a temporary directory. It keeps dependencies out of the target project. Posting evidence requires an authorized destination and the relevant upload tool.
+> The recorder needs `ffmpeg`/`ffprobe` with `libx264` and the `ass` filter, plus a supported desktop capture source. Run `python3 scripts/evidence.py doctor` from the skill directory to check availability. The headless helper, `scripts/run-playwright.sh`, uses Node 20+ and npm to install the pinned Playwright dependency lockfile beside a self-contained capture script in a temporary directory. It keeps dependencies out of the target project. Posting evidence requires an authorized destination and the relevant upload tool.
 
 ### [greploop](greploop/SKILL.md)
 

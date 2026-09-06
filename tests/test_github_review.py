@@ -50,6 +50,13 @@ def test_old_completed_check_and_score_do_not_complete_a_new_attempt():
     assert result["status"] == "pending"
 
 
+def test_stale_running_check_cannot_block_a_fresh_scored_review():
+    old = check(status="in_progress")
+    review = {"id": 2, "user": {"login": BOT}, "commit_id": HEAD, "submitted_at": AFTER, "body": "Confidence: 5/5"}
+    result = evaluate(state=attempt(checks=[old]), checks=[old], reviews=[review])
+    assert (result["status"], result["score"]) == ("review_ready", 5)
+
+
 def test_timestamp_only_edit_cannot_refresh_an_old_score():
     assert evaluate(comments=[summary()])["status"] == "pending"
 

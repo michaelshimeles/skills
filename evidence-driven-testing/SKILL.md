@@ -8,7 +8,7 @@ description: >
   behavior needs observable verification, including
   headless environments (scripted screenshots and probes) and non-UI changes
   (measured numbers, output pairs).
-compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test. The bundled recorder (scripts/evidence.py) runs on Linux (X11 via x11grab, Wayland via wf-recorder), macOS (avfoundation, needs Screen Recording permission) and Windows (gdigrab) and needs Python 3 plus ffmpeg + ffprobe built with libx264 and the ass filter. The headless helper requires Bash, Node, npm, and Chromium system libraries; it installs Playwright outside the target project. Posting evidence requires gh (GitHub CLI) or equivalent.
+compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test. The bundled recorder (scripts/evidence.py) runs on Linux (X11 via x11grab, Wayland via wf-recorder), macOS (avfoundation, needs Screen Recording permission) and Windows (gdigrab) and needs Python 3 plus ffmpeg + ffprobe built with libx264 and the ass filter. The headless helper requires Bash, Node 20+, npm, and Chromium system libraries; it installs Playwright outside the target project. Posting evidence requires gh (GitHub CLI) or equivalent.
 metadata:
   version: "1.2"
 ---
@@ -252,13 +252,16 @@ swap the recorder for scripted capture:
   bash /path/to/evidence-driven-testing/scripts/run-playwright.sh record.mjs
   ```
 
-  The helper installs Playwright in a temporary directory, copies the script
+  The helper installs the pinned Playwright version from its bundled manifest
+  and lockfile with `npm ci` in a temporary directory, copies the script
   beside that installation, installs Chromium if needed, and removes the
   temporary directory on exit. It preserves the caller's working directory,
-  so relative artifact paths still point into your project. Node and npm are
+  so relative artifact paths still point into your project. Node 20+ and npm are
   required; the browser cache remains available for later runs. Keep the script
   self-contained: relative imports and adjacent data files are not copied.
   Use the project's existing Playwright setup for scripts with local imports.
+  When upgrading capture tooling, update `scripts/playwright/package.json`,
+  regenerate its lockfile with npm, and rerun the capture checks.
 
   `npx --package=playwright` adds executables to PATH; it does not make the
   package importable from an arbitrary ESM script. Minimal `record.mjs`:

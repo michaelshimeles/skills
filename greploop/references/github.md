@@ -49,7 +49,8 @@ verified. Do not substitute the PR description or an arbitrary `5/5` string.
 Read the returned `body` and all general-comment findings. Then use the
 [GraphQL reference](graphql-queries.md) to fetch unresolved threads. Follow
 `pageInfo.endCursor` until `hasNextPage` is false. Identify Greptile by its exact
-trusted author login. Read full thread discussions before deciding a finding
+trusted author login. GraphQL may omit the `[bot]` suffix shown by REST;
+verify the bot's GraphQL identity before filtering threads. Read full thread discussions before deciding a finding
 is addressed; the initial query only returns a few comments per thread.
 
 Use `isResolved` on review threads for resolution state. The REST inline

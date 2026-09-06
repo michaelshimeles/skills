@@ -52,8 +52,6 @@ def evaluate(attempt, current_head, checks, comments, reviews):
             continue
         if check.get("head_sha") != current_head:
             continue
-        if check.get("status") != "completed":
-            return {"status": "pending", "reason": "a check for the current head is still running"}
         old = old_checks.get(str(check["id"]))
         started = check.get("started_at") or ""
         if started < triggered:

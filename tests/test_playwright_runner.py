@@ -19,6 +19,10 @@ def capture_environment(tmp_path):
     npm = bin_dir / "npm"
     npm.write_text(f"#!{sys.executable}\n" + '''import json, os, pathlib, sys
 root = pathlib.Path(sys.argv[sys.argv.index('--prefix') + 1])
+assert sys.argv[1] == 'ci', 'Capture must install the committed dependency selection'
+manifest = json.loads((root / 'package.json').read_text())
+lock = json.loads((root / 'package-lock.json').read_text())
+assert lock['packages']['node_modules/playwright']['version'] == manifest['dependencies']['playwright']
 pathlib.Path(os.environ['INSTALL_LOG']).write_text(str(root))
 if os.environ.get('FAIL_INSTALL'):
     sys.exit(9)
