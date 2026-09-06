@@ -125,6 +125,21 @@ def test_confidence_formats(body):
     assert REVIEW.confidence(body) == 4
 
 
+def test_confidence_ignores_prose_quotes_and_fenced_examples():
+    body = '''The skill aims for Confidence Score: 5/5 before shipping.
+> Confidence Score: 5/5
+```text
+Confidence Score: 5/5
+```
+<h3>Confidence Score: 3/5</h3>
+'''
+    assert REVIEW.confidence(body) == 3
+
+
+def test_conflicting_score_headings_are_not_guessed():
+    assert REVIEW.confidence("Confidence Score: 5/5\nConfidence Score: 3/5") is None
+
+
 def test_head_change_invalidates_attempt():
     with pytest.raises(REVIEW.ReviewError, match="head changed"):
         REVIEW.evaluate(attempt(), OLD_HEAD, [], [summary(id=11)], [])

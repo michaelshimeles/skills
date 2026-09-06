@@ -18,9 +18,21 @@ class ReviewError(RuntimeError):
 
 
 def confidence(body):
-    text = re.sub(r"<[^>]+>", " ", body).replace("*", "").replace("#", "")
-    match = re.search(r"\bconfidence(?:\s+score)?\s*:?\s*([0-5])\s*/\s*5\b", text, re.I)
-    return int(match[1]) if match else None
+    lines = []
+    fence = None
+    for line in body.splitlines():
+        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if marker:
+            if fence is None:
+                fence = marker[1]
+            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = None
+        elif fence is None:
+            lines.append(line)
+    text = re.sub(r"</?(?:h[1-6]|p|div)\b[^>]*>", "\n", "\n".join(lines))
+    text = re.sub(r"<[^>]+>", " ", text).replace("*", "").replace("#", "").replace("_", "")
+    scores = set(re.findall(r"^\s*confidence(?:\s+score)?\s*:?\s*([0-5])\s*/\s*5\s*$", text, re.I | re.M))
+    return int(scores.pop()) if len(scores) == 1 else None
 
 
 def reviewed_commit(body):
