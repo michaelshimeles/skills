@@ -94,8 +94,8 @@ def evaluate(attempt, current_head, checks, comments, reviews):
         if confidence(body) is None or "too many files changed" in body.lower():
             continue
         commit = reviewed_commit(body)
-        # An explicit old commit wins over unrelated fresh review activity.
-        if commit != current_head and (commit is not None or not fresh_reviews):
+        # A separate review cannot establish which revision this comment covers.
+        if commit != current_head:
             continue
         candidates.append((comment["updated_at"], "comment", comment))
 

@@ -79,12 +79,18 @@ def test_new_summary_must_identify_the_current_revision(commit):
     assert evaluate(comments=[summary(id=11, commit=commit)])["status"] == "pending"
 
 
-def test_fresh_review_can_associate_a_summary_without_a_commit_link():
+def test_empty_fresh_review_cannot_associate_a_summary_without_a_commit_link():
     review = {"id": 2, "user": {"login": BOT}, "commit_id": HEAD, "submitted_at": AFTER, "body": ""}
     result = evaluate(comments=[summary(id=11, commit=None)], reviews=[review])
-    assert result["status"] == "review_ready"
+    assert result["status"] == "pending"
     # A summary explicitly naming an older commit cannot borrow this association.
     assert evaluate(comments=[summary(id=11, commit=OLD_HEAD)], reviews=[review])["status"] == "pending"
+
+
+def test_scored_review_supplies_its_own_score_instead_of_borrowing_a_markerless_summary():
+    review = {"id": 2, "user": {"login": BOT}, "commit_id": HEAD, "submitted_at": AFTER, "body": "Confidence: 3/5"}
+    result = evaluate(comments=[summary(id=11, commit=None)], reviews=[review])
+    assert (result["status"], result["source"], result["score"]) == ("review_ready", "review", 3)
 
 
 @pytest.mark.parametrize("overrides", [

@@ -26,9 +26,10 @@ Let that run finish, then use a new attempt path to request a fresh review.
 
 `wait` is read-only. It paginates all result sources, verifies the head before
 and after reading, and rejects old completed checks and unchanged summaries.
-A scored review must be newer than the trigger and tied to the head through a
-review's `commit_id` or the summary's explicit last-reviewed-commit link. A
-fresh summary without either association remains pending. This also permits
+A scored review must be newer than the trigger. A PR review carries its own
+`commit_id`; an issue summary must carry its own last-reviewed-commit link.
+A separate review cannot establish a markerless summary's revision or score.
+A fresh scored PR review can supply its own result. This also permits
 large-PR reviews that update a summary without creating a check run.
 
 A fresh running check keeps the attempt pending. A cancelled, skipped, stale,
