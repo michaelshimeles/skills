@@ -24,24 +24,34 @@ allowed-tools:
 ## Agent Behavior Rules
 
 **DO NOT:**
-- Switch git branches, stash changes, start dev servers, or assume what "before" is
+- Switch branches or stash another task's changes. Use an isolated worktree for
+  any baseline server already authorized by the task.
 - Use `--full` unless user explicitly asks for full page / full scroll capture
 
 **DO:**
 - Use `--markdown` when user wants PR integration or markdown output
 - Use `--mobile` / `--tablet` if user mentions phone, mobile, tablet, responsive, etc.
-- Assume current state is **After**
-- If user provides only one URL or says "PR screenshots" without URLs, **ASK**: "What URL should I use for the 'before' state? (production URL, preview deployment, or another local port)"
+- Reuse before captures, baseline URLs, and revision information already
+  established in the task. Confirm that they show the relevant behavior and
+  match the after capture's viewport and starting state.
+- Treat the current state as after only when the task context establishes it.
+  If the before state remains ambiguous after checking available context, ask
+  for the missing baseline. Do not ask again for a URL when a valid image pair
+  or earlier baseline is already available.
 
-## Execution Order (MUST follow)
+## Capture and delivery
 
-1. **Pre-flight** — `which before-and-after || npm install -g @vercel/before-and-after`
-2. **Protection check** — if `.vercel.app` URL: `curl -s -o /dev/null -w "%{http_code}" "<url>"` (401/403 = protected)
-3. **Capture** — `before-and-after "<before-url>" "<after-url>"`
-4. **Upload** — `./scripts/upload-and-copy.sh <before.png> <after.png> --markdown`
-5. **PR integration** — optionally `gh pr edit` to append markdown
+1. Use an installed `before-and-after` CLI or `npx @vercel/before-and-after`.
+2. For remote URLs, check access when needed. A 401/403 indicates protection.
+   Existing image pairs do not require a URL or deployment access check.
+3. Capture missing images with `before-and-after "<before-url>" "<after-url>"`.
+4. When the task calls for uploaded evidence or PR markdown, run
+   `before-and-after before.png after.png --markdown` once. For local capture
+   requests, deliver the files without uploading them.
+5. Append the markdown to the PR when PR integration is part of the task.
 
-**Never skip steps 1-2.**
+Resolve bundled script paths relative to this skill's directory, not the
+project working directory. Reuse earlier evidence instead of recapturing it.
 
 ## Quick Reference
 
@@ -105,11 +115,8 @@ which gh
 # Get current PR
 gh pr view --json number,body
 
-# Append screenshots to PR body
-gh pr edit <number> --body "<existing-body>
-
-## Before and After
-<generated-markdown>"
+# Write the existing body plus the comparison to a temporary file, then:
+gh pr edit <number> --body-file /path/to/pr-body.md
 ```
 
 If no `gh` CLI: output markdown and tell user to paste manually.

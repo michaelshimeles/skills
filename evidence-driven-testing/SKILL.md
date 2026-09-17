@@ -4,18 +4,24 @@ description: >
   Records visual proof while testing UI behavior — the agent tests the app
   hands-on via computer use while a screen recording with structured
   test/assertion annotations captures the session — then posts the video and a
-  results summary to the PR and tracker issue. Use whenever a change needs
-  verifiable evidence that it works, instead of prose claims — including
+  results summary to the requested destination. Use when changed runtime
+  behavior needs observable verification, including
   headless environments (scripted screenshots and probes) and non-UI changes
   (measured numbers, output pairs).
-compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test. The bundled recorder (scripts/evidence.py) runs on Linux (X11 via x11grab, Wayland via wf-recorder), macOS (avfoundation, needs Screen Recording permission) and Windows (gdigrab) and needs Python 3 plus ffmpeg + ffprobe built with libx264 and the ass filter. The headless path requires only a running app and a scriptable browser (e.g. Playwright via npx). Posting evidence requires gh (GitHub CLI) or equivalent.
+compatibility: Screen-recording path requires a GUI environment the agent can drive — built-in computer use, or the cua-driver CLI (trycua/cua) when the harness has no computer-use tools — plus an authenticated browser session for the app under test. The bundled recorder (scripts/evidence.py) runs on Linux (X11 via x11grab, Wayland via wf-recorder), macOS (avfoundation, needs Screen Recording permission) and Windows (gdigrab) and needs Python 3 plus ffmpeg + ffprobe built with libx264 and the ass filter. The headless helper requires Bash, Node 20+, npm, and Chromium system libraries; it installs Playwright outside the target project. Posting evidence requires gh (GitHub CLI) or equivalent.
 metadata:
   version: "1.2"
 ---
 
 # Evidence-Driven Testing
 
-Record annotated proof of behavior, then attach it to the PR and tracker issue.
+Record proof of behavior and deliver it to the requested destination.
+
+Choose evidence proportional to the change. Use the recorder for interactive
+flows, scripted captures for headless UI checks, and output pairs for CLI or
+API changes. Documentation-only edits need content checks and verification of
+runnable examples, not a recording. Reuse suitable evidence already captured
+in the task. Publish only to destinations included in the requested work.
 
 The recording is the capture of you testing the app via computer use: start the
 recorder, then drive the app yourself — click, type, navigate — through each
@@ -180,7 +186,8 @@ Python 3 and FFmpeg.
   upload it to a host and link it (for example the `before-and-after` upload
   adapters). Reopen the comment and confirm the video plays before claiming it
   is posted.
-- Attach the same video to the tracker issue (Linear/Jira) with a one-line result.
+- If the task includes a tracker issue and posting there is authorized, attach
+  the same video with a one-line result.
 - Send the report + recording to the requester.
 
 ## Guardrails
@@ -242,24 +249,40 @@ swap the recorder for scripted capture:
   adding playwright to the project's dependencies:
 
   ```bash
-  npx --yes --package=playwright node record.mjs
+  bash /path/to/evidence-driven-testing/scripts/run-playwright.sh record.mjs
   ```
 
-  (Plain `npx playwright node record.mjs` fails — `node` is not a Playwright
-  CLI command; `--package=playwright` is what puts the module on the path.)
-  Minimal `record.mjs`:
+  The helper installs the pinned Playwright version from its bundled manifest
+  and lockfile with `npm ci` in a temporary directory, copies the script
+  beside that installation, installs Chromium if needed, and removes the
+  temporary directory on exit. It preserves the caller's working directory,
+  so relative artifact paths still point into your project. Node 20+ and npm are
+  required; the browser cache remains available for later runs. Keep the script
+  self-contained: relative imports and adjacent data files are not copied.
+  Use the project's existing Playwright setup for scripts with local imports.
+  When upgrading capture tooling, update `scripts/playwright/package.json`,
+  regenerate its lockfile with npm, and rerun the capture checks.
+
+  `npx --package=playwright` adds executables to PATH; it does not make the
+  package importable from an arbitrary ESM script. Minimal `record.mjs`:
 
   ```js
   import { chromium } from "playwright";
   const browser = await chromium.launch();
-  const context = await browser.newContext({
-    recordVideo: { dir: ".artifacts/<task-name>/" },
-  });
-  const page = await context.newPage();
-  await page.goto("http://localhost:3000/path-under-test");
-  // ...drive the flow, one meaningful state change per step...
-  await context.close(); // finalizes the .webm
-  await browser.close();
+  try {
+    const context = await browser.newContext({
+      recordVideo: { dir: ".artifacts/<task-name>/" },
+    });
+    try {
+      const page = await context.newPage();
+      await page.goto("http://localhost:3000/path-under-test");
+      // Drive the flow and check each expected state here.
+    } finally {
+      await context.close(); // Finalizes the video even if an assertion fails.
+    }
+  } finally {
+    await browser.close();
+  }
   ```
 
   Trim or compress with ffmpeg if the file is large.

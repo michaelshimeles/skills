@@ -1,33 +1,33 @@
 ---
 name: new-feature
-description: Start a new task in an isolated Git worktree branched from origin/main so multiple agents can work on the same repo in parallel without conflicts. Use at the beginning of every new feature, fix, or task — before writing any code.
+description: Isolate repository edits in a Git worktree before starting a feature, fix, or documentation change. Preserve a worktree already assigned to the same task. Read-only reviews and investigations do not need a new worktree.
 ---
 
 # New Feature
 
-Every task gets its own worktree and branch, created from the latest
-`origin/main`. Never build on `main`, and never reuse another agent's
-worktree or branch.
+Each editing task gets its own worktree and branch, created from the latest
+`origin/main` unless the user specifies a different base. Read-only work can
+use the existing checkout. Never build on `main` or reuse another task's work.
 
-## Harness deltas — read first
+## Check existing isolation first
 
-- **Claude Code**: the harness creates and manages worktrees itself (under
-  `.claude/worktrees/<name>`). **Skip steps 3–4 below** (no manual
-  `git worktree add` / `remove`), and keep the harness-assigned branch name.
-  Steps 1–2 and 5 still apply.
-- **Cursor-managed worktrees** (branches named `worktree-*`): same idea —
-  keep the assigned branch and worktree, apply steps 2 and 5.
-- Any other harness: follow all steps.
+Inspect `git worktree list`, `git status --short`, the current branch, and the
+session's task assignment. If the environment already created a worktree for
+this task, keep its path and branch and skip steps 3 and 4. In step 5, use the
+actual assigned path. Do not infer isolation from the editor name or a branch
+prefix alone. Otherwise follow all steps.
 
 ## Steps
 
 1. **Sync**: `git fetch origin`.
 
 2. **Scope check**: run `gh pr list` and skim the open PRs' changed files
-   (`gh pr diff <n> --name-only`). If your task needs files another open PR
-   is editing, **stop and ask for direction** instead of proceeding. Also
-   check for uncommitted work in the checkout — another agent may be
-   mid-task.
+   (`gh pr diff <n> --name-only`). For shared files, read the overlapping
+   diffs. Independent edits may proceed in your own worktree. Ask for direction
+   only when the changes conflict in behavior, require another task's unfinished
+   work, or ownership is unclear. Check shared checkouts for uncommitted work
+   without changing it. On another hosting platform, use its equivalent PR/MR
+   tools; if unavailable, report the scope-check limitation and still isolate.
 
 3. **Name the task**: lowercase-with-hyphens plus a short unique suffix,
    e.g. `user-auth-0816a`. If `git worktree add` fails because the name
@@ -40,8 +40,8 @@ worktree or branch.
      -b <branch-prefix>/<task-name> origin/main
    ```
 
-   Use a **gitignored** directory for worktrees (e.g. `.claude/worktrees/`
-   or `.worktrees/`) so they can never be committed by accident, and a
+   Use a directory outside the checkout, or a **gitignored** directory inside
+   it, so worktrees cannot be committed by accident. Use a
    consistent branch prefix (e.g. `agent/`). Follow the repo's conventions
    if it defines them.
 
@@ -52,14 +52,14 @@ worktree or branch.
    git branch --show-current   # must print your new branch, not main
    ```
 
-   Then install dependencies fresh inside the worktree (worktrees don't
-   share `node_modules`/virtualenvs) and confirm the runtime version the
-   repo requires before running anything.
+   Confirm the required runtime version. Install dependencies inside the
+   worktree when needed for the task's checks. Documentation-only work does
+   not require installing an unrelated application toolchain.
 
 ## Remember
 
-- Worktrees do **not** isolate shared resources: dev-server ports, shared
-  databases, and dependency lockfiles are global. Confirm a port answers
+- Worktrees do **not** isolate dev-server ports or shared databases.
+  Tracked dependency lockfiles are separate in each worktree. Confirm a port answers
   *your* process (`lsof -i :<port>`) before trusting what it serves, and
   resolve lockfile conflicts by regenerating, never by hand-merging.
 - Keep the worktree until the PR is merged or closed. Cleanup after merge:

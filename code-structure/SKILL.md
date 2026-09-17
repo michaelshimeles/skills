@@ -7,7 +7,10 @@ description: Use when multiple workflows duplicate the same operational logic, w
 
 ## Overview
 
-**Two-layer separation:** Actions orchestrate domain rules (the "why/when"), while a service layer centralizes reusable operational mechanics (the "how").
+This collection prefers a two-layer separation: actions orchestrate domain
+rules, while services implement reusable operations. Use it where the project
+has no established convention. Preserve existing domain services, repositories,
+transaction boundaries, and framework patterns when they already fit the task.
 
 This prevents duplicated code, inconsistent behavior, and bugs fixed in one path but not others.
 
@@ -18,7 +21,9 @@ This prevents duplicated code, inconsistent behavior, and bugs fixed in one path
 - A bug fix in one workflow doesn't propagate to others doing the same thing
 - Adding a new feature that shares mechanics with existing flows
 
-**Don't use when:** Logic is truly domain-specific and used by only one caller.
+Avoid extraction that adds indirection without a concrete benefit. Repetition
+is a useful signal, but a single caller can justify a boundary for testing,
+provider isolation, transactions, or complex logic.
 
 ## Core Pattern
 
@@ -41,10 +46,10 @@ Orchestration Layer (Actions)          Service Layer (Shared Mechanics)
 | Design Principle | Do | Don't |
 |---|---|---|
 | API shape | Composable capability blocks | One giant "do everything" method |
-| Inputs/outputs | Explicit params, structured returns | Hidden global state, reaching into DB |
+| Inputs/outputs | Explicit dependencies and meaningful results | Hidden global state or undocumented side effects |
 | Migration | Extract one block, replace one caller, verify, then migrate rest | Refactor everything at once |
-| Domain logic | Keep auth, policy, error classification in actions | Let service mutate domain state directly |
-| Extraction trigger | Logic repeated across 2+ callers | Logic used once (over-abstraction) |
+| Domain logic | Put policy and transactions in the project's established owner | Scatter the same policy across callers |
+| Extraction trigger | Repeated mechanics or a concrete boundary benefit | Speculative abstractions with no current benefit |
 
 ## Designing Service Functions
 
@@ -63,8 +68,9 @@ startSandboxRuntime(...)
 Each function should:
 - Accept all required data as **explicit parameters**
 - Return **structured outputs** (e.g., `{ ready, previewUrl, proxyPort }`)
-- Never reach into database/state directly
-- Make failure explicit (structured results, not swallowed errors)
+- Inject database or repository access when the service owns persistence under
+  the project's architecture. State writes and transaction boundaries explicitly.
+- Make failure explicit through typed results or documented exceptions
 
 This lets callers choose strict vs relaxed behavior per flow.
 
@@ -72,11 +78,11 @@ This lets callers choose strict vs relaxed behavior per flow.
 
 When extracting shared logic:
 
-1. Write the flow in action code first (clear behavior)
-2. Mark repeated operational chunks across callers
-3. Extract **only** repeated, non-domain chunks to service
+1. Identify the existing owners of policy, persistence, and transactions
+2. Mark repeated operations or boundaries with a concrete current benefit
+3. Extract a cohesive operation consistent with those owners
 4. Replace one caller → verify → replace remaining callers
-5. Keep domain policy in actions (auth, status transitions, error classification)
+5. Preserve auth, status transitions, error handling, and transaction behavior
 6. Run verification: typecheck, lint, confirm all flows still work
 
 ## Anti-Patterns
@@ -84,9 +90,9 @@ When extracting shared logic:
 | Anti-Pattern | Problem |
 |---|---|
 | **God service** | One huge function hides all control flow |
-| **Leaky service** | Service mutates database tables directly |
+| **Leaky service** | Hidden state changes or unclear transaction ownership |
 | **Inconsistent API** | Each function uses different argument styles and error semantics |
-| **Over-abstraction** | Extracting logic used by only one caller |
+| **Over-abstraction** | Indirection with no reuse, testability, or boundary benefit |
 
 ## Example: Email Service (Simple)
 
@@ -109,8 +115,9 @@ await sendWelcomeEmail({ to: invitee.email, name: invitee.name });
 ## Mental Model
 
 ```
-New feature? → Write in action first → See repeated ops? → Extract to service
-                                      → No repetition?  → Keep in action
+Existing architecture? → Follow its boundaries
+No convention? → Prefer actions for orchestration and services for operations
+Extraction? → Name its concrete benefit before adding another layer
 ```
 
-Your architecture in one sentence: **Actions orchestrate domain rules, while the service layer centralizes reusable operational mechanics with a composable, explicit-input API.**
+Keep responsibilities clear, dependencies explicit, and side effects visible.
