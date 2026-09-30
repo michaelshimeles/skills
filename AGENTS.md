@@ -15,8 +15,11 @@ its own section; apply [Pi instructions](#pi-specific-instructions) only in Pi.
 Follow the consuming project's architecture, permissions and test-execution
 policy before this collection's generic guidance. Flag conflicts before acting.
 Invoking a skill or this workflow does not override an existing approval boundary.
-If the project reserves tests for the user, request authorization or provide
-commands instead of running them.
+Use the project's standing permission for checks without requesting approval on
+every run; honor narrower task instructions. If execution is reserved for the
+user or permission is unclear, request authorization or provide commands.
+Project agent instructions define permissions; maintained testing documentation
+defines commands, prerequisites and check-selection guidance.
 
 This file is the workflow source of truth for this fork. Read the applicable
 skills at their stages. Skill names in the core are references, not portable
@@ -27,8 +30,9 @@ inventing them.
 
 The adaptations so far separate scope and harness guidance, remove the web
 screenshot-comparison skill and make branch selection project-aware. Overlap
-handling now uses a trial risk assessment rather than a blanket stop. Broader
-verification and the Greptile gate remain for later discussion.
+handling now uses a trial risk assessment rather than a blanket stop.
+Verification focuses on software tests; the Greptile gate remains for later
+discussion.
 
 ## Workflow
 
@@ -40,14 +44,15 @@ verification and the Greptile gate remain for later discussion.
    choose cohesive ownership and explicit public contracts, and refactor shared
    behavior only when justified. Service-layer extraction is an option, not a
    required layout. Get agreement before departing from established boundaries.
-3. **Prove.** Read `evidence-driven-testing/SKILL.md`. Verify with the repo's checks
-   plus runtime evidence. Capture the **before** state while reproducing the
-   issue — prior to fixing it, when it is cheapest — and the **after** once
-   the change works.
-4. **Ship.** Read `greploop/SKILL.md`. Open the PR with evidence appropriate to
-   the change, such as test output, serial logs, protocol traces, terminal
-   captures or hardware observations. Screenshots and video are not mandatory
-   for every visible change. State missing verification explicitly. Follow
+3. **Prove.** Read `evidence-driven-testing/SKILL.md`. Map acceptance criteria to
+   software tests, add or update relevant coverage, and select production builds
+   or other checks when compilation also needs verification. Execute under standing
+   project permission or explicit authorization. Report the tested state, commands,
+   environment, outcomes and evidence source. Hand off unexecuted checks with their commands
+   and distinguish software verification from physical validation.
+4. **Ship.** Read `greploop/SKILL.md`. Open the PR with the software-test
+   verification summary and any relevant supplementary evidence. Screenshots and
+   video are not required. State missing verification explicitly. Follow
    `greploop`, or `greploop-apps` when the PR exceeds Greptile's file-count limit,
    until Greptile reports **5/5 with zero unresolved comments**. Finish by
    presenting the PR URL.

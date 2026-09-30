@@ -14,7 +14,7 @@ The first adaptation separates a generic workflow core from Pi-specific usage an
 
 The web screenshot-comparison skill and its upload scripts have been removed. Evidence should fit the change: test output, serial logs, protocol traces, terminal captures or hardware observations. A screenshot comparison table is not a required delivery artifact.
 
-Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap handling is now a trial risk-based policy: inspect relevant changes, proceed with compatible independent edits, and ask about unclear compatibility, conflicting behavior or unresolved dependencies. Each task agent owns compatibility with its agreed base; cross-branch coordination and published-history rewrites require user agreement. The broader verification skill and review gates remain topics for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
+Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap handling is now a trial risk-based policy: inspect relevant changes, proceed with compatible independent edits, and ask about unclear compatibility, conflicting behavior or unresolved dependencies. Each task agent owns compatibility with its agreed base; cross-branch coordination and published-history rewrites require user agreement. Verification now focuses on software tests, with no bundled media recorder. Review gates remain a topic for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
 
 ## Available skills
 
@@ -33,11 +33,13 @@ The skill preserves project terminology and dependency rules, requires agreement
 
 ### [evidence-driven-testing](evidence-driven-testing/SKILL.md)
 
-Records visual proof while testing UI behavior. The agent drives the app live via computer use (or [cua-driver](https://github.com/trycua/cua) when the harness has no computer-use tools) while the bundled recorder captures the session, then posts the video and a results summary to the PR and tracker issue. The recorder (`scripts/evidence.py`, Python 3 + FFmpeg) runs on Linux, macOS, and Windows and has `doctor`, `start`, `annotate`, and `stop` commands. It timestamps each annotation as the agent tests, burns them into `evidence.mp4` on stop, and summarizes them in a generated `report.md` and `manifest.json`. Headless environments swap the recorder for scripted screenshots and Playwright captures; non-UI changes still get evidence (measured numbers, output pairs, transcript excerpts).
+Software-test verification using the project's existing frameworks and commands. Map changed acceptance criteria to relevant unit, integration or end-to-end tests, add regression coverage, and run checks only within project authorization. Use standing project permission without asking again for each allowed run; otherwise provide commands or request authorization. Select production compilation checks too when host tests cannot cover the changed code.
 
-Use it whenever a change needs verifiable evidence that it works, instead of prose claims.
+Permissions belong in the target project's agent instructions. Suite choices, commands and prerequisites belong in its maintained testing guide. This collection does not hard-code a firmware project's host, emulation or physical-target scheme.
 
-> The recorder needs `ffmpeg`/`ffprobe` built with `libx264` and the `ass` filter, plus a screen-capture source: X11 (`DISPLAY`) or wlroots Wayland (`wf-recorder`; GNOME/KDE are not supported) on Linux, Screen Recording permission on macOS, any standard ffmpeg on Windows. `python3 scripts/evidence.py doctor` reports both. The raw capture is MPEG-TS, so a crashed or hard-killed recorder still yields usable evidence. The headless path needs only a running app and a scriptable browser (Playwright via npx). Posting evidence requires the `gh` CLI (or equivalent). `tests/test_evidence.py` smoke-tests the recorder end to end with a synthetic video source (`python3 -m pytest tests/ -q`).
+Use it when implementing features, fixing bugs, refactoring or preparing verification for review. Reports identify the tested revision, commands, environment, results and whether evidence was agent-observed, user-reported or CI-observed. Missing checks, skipped suites and limits of emulation or fakes remain explicit.
+
+The skill name is retained for continuity, but screen recording, browser-capture instructions, upload tooling and recorder-specific tests have been removed. It has no bundled runtime dependencies; the target project's test tooling supplies them. Physical behavior may still need separate validation, which software-test results must not claim to prove.
 
 ### [greploop](greploop/SKILL.md)
 
