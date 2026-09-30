@@ -177,9 +177,8 @@ Python 3 and FFmpeg.
 - Post the video + summary as a PR comment (embed in the PR description if
   it's your PR). `gh pr comment` cannot attach a local video — upload
   `evidence.mp4` through the PR's comment box in an authenticated browser, or
-  upload it to a host and link it (for example the `before-and-after` upload
-  adapters). Reopen the comment and confirm the video plays before claiming it
-  is posted.
+  upload it to a host approved for the evidence's sensitivity and link it.
+  Reopen the comment and confirm the video plays before claiming it is posted.
 - Attach the same video to the tracker issue (Linear/Jira) with a one-line result.
 - Send the report + recording to the requester.
 
@@ -234,10 +233,9 @@ swap the recorder for scripted capture:
 - Save everything to `.artifacts/<task-name>/` (gitignore it — evidence gets
   uploaded, never committed). Keep the capture script beside the captures so
   the run is repeatable.
-- **Screenshots**: the `before-and-after` CLI (`@vercel/before-and-after`)
-  captures URLs or elements and its pairs feed PR embeds directly. In
-  containers/VMs where Chrome fails with "No usable sandbox", set
-  `AGENT_BROWSER_ARGS="--no-sandbox"`.
+- **Screenshots**: use the available browser tooling or a Playwright script to
+  capture the relevant page or element. Save the captures with their assertions;
+  a comparison-table tool is not required.
 - **Video / multi-step flows**: a one-off Playwright script, run without
   adding playwright to the project's dependencies:
 
@@ -289,5 +287,6 @@ swap the recorder for scripted capture:
   `ps -p <pid> -o args=` to confirm it's yours.
 - Evidence complements the repo's checks (typecheck/build/tests); it never
   replaces them.
-- Hand before/after media pairs to a before/after tool for the PR embed
-  (e.g. `before-and-after before.png after.png --markdown`).
+- Attach relevant captures or link approved artifacts directly in the PR.
+  Check for sensitive content before uploading; no comparison-table tool is
+  required.
