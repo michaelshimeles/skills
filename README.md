@@ -1,23 +1,22 @@
-# Skills
+# Agent-assisted delivery workflow
 
-A collection of [agent skills](https://code.claude.com/docs/en/skills) for Claude Code. Each skill is a folder containing a `SKILL.md` with frontmatter (name, description) and instructions that Claude loads on demand when the task matches.
+Sille's personal fork of [michaelshimeles/skills](https://github.com/michaelshimeles/skills), adapted from experiments with the Helios Lite firmware project.
 
-[![skills.sh](https://skills.sh/b/michaelshimeles/skills)](https://skills.sh/michaelshimeles/skills)
+The goal is repeatable delivery with clear human involvement. The workflow is independent of model and coding-agent harness. OpenAI, Anthropic and other model choices follow the same delivery rules. Harness-specific instructions belong in separate sections, starting with Pi.
 
+For firmware work, the name is **Agent-Assisted Firmware Delivery Workflow**, or **Helios Delivery Workflow** for short. "Software-factory experiment" describes the broader ambition, not a claim that delivery is fully autonomous.
+
+Each skill is a folder containing `SKILL.md` with frontmatter and instructions, using the [Agent Skills format](https://agentskills.io/specification). Discovery, automatic loading and command syntax depend on the harness.
+
+## Scope of this fork
+
+The first adaptation separates a generic workflow core from Pi-specific usage and preserves upstream attribution. The component skills still contain inherited assumptions, including Claude Code and Cursor worktree instructions in `new-feature`. A model-neutral README does not make every bundled skill harness-neutral yet.
+
+The web screenshot-comparison skill and its upload scripts have been removed. Evidence should fit the change: test output, serial logs, protocol traces, terminal captures or hardware observations. A screenshot comparison table is not a required delivery artifact.
+
+Branch and dependency policy, overlap checks, the broader verification skill and review gates remain topics for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
 
 ## Available skills
-
-### [before-and-after](before-and-after/SKILL.md)
-
-Captures before/after screenshots of web pages or elements and outputs a PR-ready markdown comparison table. It drives the `@vercel/before-and-after` CLI.
-
-Use it when:
-
-- A PR needs visual proof that a UI change does what it claims
-- You want a `| Before | After |` table generated and uploaded in one step
-- Comparing two URLs, two existing images, or a mix of both
-
-> Vendored from [vercel-labs/before-and-after](https://github.com/vercel-labs/before-and-after) (PolyForm Shield 1.0.0, license included in the folder). Install the CLI with `npm i -g @vercel/before-and-after agent-browser`.
 
 ### [code-structure](code-structure/SKILL.md)
 
@@ -66,7 +65,7 @@ Use it when:
 - Multiple agents (or sessions) work the same repository concurrently
 - You need a consistent branch-per-task convention with safe cleanup
 
-Includes harness deltas for Claude Code and Cursor, which manage worktrees themselves.
+The current skill includes inherited worktree instructions for Claude Code and Cursor. For other harnesses, inspect the assigned workspace before creating a worktree. Isolated edits do not eliminate integration conflicts between branches.
 
 ### [unslop](unslop/SKILL.md)
 
@@ -81,20 +80,39 @@ Use it when:
 
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) ties the skills together into a four-beat workflow: isolate (`new-feature`) → build (`code-structure`) → prove (`evidence-driven-testing`) → ship (`before-and-after` + `greploop`), with `unslop` applied to everything written for humans along the way. Drop it into a repo alongside the skills and fill in the repo-specific callouts (checks, invariants, environment).
+[`AGENTS.md`](AGENTS.md) is the authoritative workflow for this collection. It connects isolate (`new-feature`), build (`code-structure`), prove (`evidence-driven-testing`) and ship (`greploop`), with `unslop` for human-facing text.
+
+To use it in another project, reference or adapt it alongside that project's existing instructions. Keep project architecture and safety rules authoritative rather than replacing them with this file. Read the workflow and relevant skills instead of pasting an older upstream prompt into each task.
 
 ## Installation
 
-Use `npx skills` to install skills to most coding agents:
+Use `npx skills` to install from this fork, selecting the target agent and scope supported by the installer:
 
 ```bash
-npx skills add michaelshimeles/skills
+npx skills add sillevl/skills-software-factory
 ```
 
-Claude Code picks up the skill automatically and invokes it when a task matches the skill's description. You can also invoke one explicitly with `/code-structure` or `/evidence-driven-testing`.
+Installing skills does not activate the entire delivery workflow. Discovery and automatic invocation depend on the harness and each skill's frontmatter. Review the instructions before enabling them, especially rules that run commands or publish evidence. Installation from upstream remains available through `npx skills add michaelshimeles/skills`.
+
+### Pi-specific usage
+
+Pi can discover user-level skills under `~/.agents/skills/` and project skills under `.agents/skills/`. Project discovery stops at the Git repository root, so a sibling clone is not automatically an installed skill collection. Keep personal skills at user level if they must also be available in new worktrees.
+
+Invoke a discovered skill explicitly with Pi's command syntax:
+
+```text
+/skill:new-feature <task>
+/skill:code-structure <design question>
+```
+
+Run `/reload` after changing installed skills. Set `disable-model-invocation: true` in a skill's frontmatter if you want it available only by explicit invocation; this fork has not changed the bundled frontmatter to impose that choice.
+
+For the full workflow, ask Pi to follow this repository's `AGENTS.md` and supply the task requirements. This fork does not yet provide a `software-factory` wrapper skill. If a skill is not installed, the agent can read its `SKILL.md` from this checkout directly. File-reading instructions are portable; slash commands are not.
+
+See the [Pi instructions in AGENTS.md](AGENTS.md#pi-specific-instructions) and [Pi skill documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md). Editing this clone does not update existing copies in `~/.agents/skills/`.
 
 ## Adding a new skill
 
 1. Create a folder named after the skill (kebab-case).
-2. Add a `SKILL.md` with `name` and `description` frontmatter. The description is what Claude uses to decide when the skill applies, so make it trigger-focused ("Use when...").
+2. Add a `SKILL.md` with `name` and `description` frontmatter. Make the description trigger-focused ("Use when...") so a supporting harness can advertise when the skill applies.
 3. Keep instructions concise and actionable; link out to reference files in the folder if they get long.
