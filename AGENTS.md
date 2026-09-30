@@ -31,8 +31,8 @@ inventing them.
 The adaptations so far separate scope and harness guidance, remove the web
 screenshot-comparison skill and make branch selection project-aware. Overlap
 handling now uses a trial risk assessment rather than a blanket stop.
-Verification focuses on software tests; the Greptile gate remains for later
-discussion.
+Verification focuses on software tests. Delivery uses a PR handoff and the
+consuming project's review requirements, with no external confidence-score gate.
 
 ## Workflow
 
@@ -50,12 +50,11 @@ discussion.
    project permission or explicit authorization. Report the tested state, commands,
    environment, outcomes and evidence source. Hand off unexecuted checks with their commands
    and distinguish software verification from physical validation.
-4. **Ship.** Read `greploop/SKILL.md`. Open the PR with the software-test
-   verification summary and any relevant supplementary evidence. Screenshots and
-   video are not required. State missing verification explicitly. Follow
-   `greploop`, or `greploop-apps` when the PR exceeds Greptile's file-count limit,
-   until Greptile reports **5/5 with zero unresolved comments**. Finish by
-   presenting the PR URL.
+4. **Ship.** Open the PR with the software-test verification summary and any
+   relevant supplementary evidence. Screenshots and video are not required.
+   State missing verification explicitly. Follow the project's review requirements
+   and report their current status; opening a PR is not approval to merge.
+   Finish by presenting the PR URL and any outstanding checks or review.
 
 ## Writing for humans
 
@@ -104,9 +103,9 @@ wrote or changed, not to prose you didn't touch.
 6. Open the PR. The body must explain what changed, how it was tested (every
    claim backed by evidence), any missing verification, and risks or follow-up
    work. Apply `unslop` to the title and body before posting.
-7. Follow `greploop` or `greploop-apps` until **5/5 with zero unresolved
-   comments**.
-8. End by presenting the PR URL.
+7. Report the status of project-required checks and review, including pending,
+   failed or unavailable requirements. Do not claim approval that has not occurred.
+8. End by presenting the PR URL, verification summary and outstanding work.
 
 Do not merge the PR unless explicitly instructed. Keep the worktree until
 the PR is merged or closed.
@@ -150,6 +149,4 @@ infrastructure (stubs, fixtures), and anything that can't be tested locally.
 | Skill | Source |
 |---|---|
 | `new-feature`, `code-structure`, `evidence-driven-testing` | this repo |
-| `greploop` | this repo, vendored from [greptileai/skills](https://github.com/greptileai/skills) |
-| `greploop-apps` | this repo (local variant of greploop for huge PRs; no separate upstream) |
 | `unslop` | this repo, vendored from [cursor/plugins (pstack)](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop); frontmatter edited so agents apply it unprompted (`disable-model-invocation` dropped, description scoped to text the agent writes or edits for people), body untouched |

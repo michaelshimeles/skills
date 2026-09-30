@@ -14,7 +14,7 @@ The first adaptation separates a generic workflow core from Pi-specific usage an
 
 The web screenshot-comparison skill and its upload scripts have been removed. Evidence should fit the change: test output, serial logs, protocol traces, terminal captures or hardware observations. A screenshot comparison table is not a required delivery artifact.
 
-Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap handling is now a trial risk-based policy: inspect relevant changes, proceed with compatible independent edits, and ask about unclear compatibility, conflicting behavior or unresolved dependencies. Each task agent owns compatibility with its agreed base; cross-branch coordination and published-history rewrites require user agreement. Verification now focuses on software tests, with no bundled media recorder. Review gates remain a topic for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
+Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap handling is now a trial risk-based policy: inspect relevant changes, proceed with compatible independent edits, and ask about unclear compatibility, conflicting behavior or unresolved dependencies. Each task agent owns compatibility with its agreed base; cross-branch coordination and published-history rewrites require user agreement. Verification now focuses on software tests, with no bundled media recorder. Delivery ends with a verification summary and PR handoff, following the consuming project's review requirements rather than a third-party confidence-score gate. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
 
 ## Available skills
 
@@ -41,22 +41,6 @@ Use it when implementing features, fixing bugs, refactoring or preparing verific
 
 The skill name is retained for continuity, but screen recording, browser-capture instructions, upload tooling and recorder-specific tests have been removed. It has no bundled runtime dependencies; the target project's test tooling supplies them. Physical behavior may still need separate validation, which software-test results must not claim to prove.
 
-### [greploop](greploop/SKILL.md)
-
-Iteratively fixes a PR (GitHub), MR (GitLab), or shelved changelist (Perforce) until Greptile gives a perfect review: 5/5 confidence with zero unresolved comments. Triggers the review, fixes actionable comments, resolves threads, pushes, and repeats, up to `--max-iterations` cycles (default 10).
-
-Use it to get a PR to a clean Greptile review before merge.
-
-> Vendored from [greptileai/skills](https://github.com/greptileai/skills) (MIT, license included in the folder). Requires Greptile installed on the repo and an authenticated `gh`/`glab`/`p4` CLI.
-
-### [greploop-apps](greploop-apps/SKILL.md)
-
-The same loop as greploop, but it triggers reviews by tagging `@greptile-apps`, which bypasses Greptile's file-count limit on huge PRs that the plain `@greptile` mention refuses to review. When no check run appears, it falls back to polling Greptile's edited summary comment.
-
-Use it when greploop's trigger gets "Too many files changed for review".
-
-> Local variant derived from greptileai's greploop (MIT, license included in the folder); no separate upstream.
-
 ### [new-feature](new-feature/SKILL.md)
 
 Starts a task in an isolated Git worktree after searching the project's instructions and development documentation for branching policy. It states the starting base and PR target before creating the workspace, defaults to `origin/main` and a PR to `main` when no policy or override exists, and asks when selection is ambiguous or depends on an unmerged feature. It also covers unique task naming, risk-based overlap assessment, integration responsibility, dependency setup and cleanup after merge. See its [overlap rules](new-feature/SKILL.md#overlap-assessment); shared filenames alone no longer block work.
@@ -82,7 +66,7 @@ Use it when:
 
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) is the authoritative workflow for this collection. It connects isolate (`new-feature`), build (`code-structure`), prove (`evidence-driven-testing`) and ship (`greploop`), with `unslop` for human-facing text.
+[`AGENTS.md`](AGENTS.md) is the authoritative workflow for this collection. It connects isolate (`new-feature`), build (`code-structure`), prove (`evidence-driven-testing`) and ship with a verification summary and PR handoff, with `unslop` for human-facing text. Project review and merge requirements still apply; opening a PR is not review approval.
 
 To use it in another project, reference or adapt it alongside that project's existing instructions. Keep project architecture and safety rules authoritative rather than replacing them with this file. Read the workflow and relevant skills instead of pasting an older upstream prompt into each task.
 
