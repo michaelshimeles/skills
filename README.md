@@ -18,6 +18,18 @@ Branch selection now follows project-specific policy, with `origin/main` and a P
 
 ## Available skills
 
+### [software-factory](software-factory/SKILL.md)
+
+Manual entry point for the complete delivery workflow. It reads the bundled
+[WORKFLOW.md](software-factory/WORKFLOW.md), follows the target project's rules
+and loads component skills at the relevant stages. Its frontmatter sets
+`disable-model-invocation: true`; the agent should not start it automatically.
+
+Install it together with `new-feature`, `code-structure`, `evidence-driven-testing`
+and `unslop` from the same version of this collection. The bundled workflow travels
+with the skill, so an installed copy does not depend on this repository's root
+`AGENTS.md` being present.
+
 ### [code-structure](code-structure/SKILL.md)
 
 Architecture-aware guidance for ownership, public contracts and shared capabilities. Read the project's architectural rules and inspect existing modules before choosing a boundary. Service-layer extraction is an option, not a required layout.
@@ -66,7 +78,7 @@ Use it when:
 
 ## Workflow
 
-[`AGENTS.md`](AGENTS.md) is the authoritative workflow for this collection. It connects isolate (`new-feature`), build (`code-structure`), prove (`evidence-driven-testing`) and ship with a verification summary and PR handoff, with `unslop` for human-facing text. Project review and merge requirements still apply; opening a PR is not review approval.
+[`software-factory/WORKFLOW.md`](software-factory/WORKFLOW.md) is the authoritative workflow for this collection; [`AGENTS.md`](AGENTS.md) points to it for repository work. It connects isolate (`new-feature`), build (`code-structure`), prove (`evidence-driven-testing`) and ship with a verification summary and PR handoff, with `unslop` for human-facing text. Project review and merge requirements still apply; opening a PR is not review approval.
 
 To use it in another project, reference or adapt it alongside that project's existing instructions. Keep project architecture and safety rules authoritative rather than replacing them with this file. Read the workflow and relevant skills instead of pasting an older upstream prompt into each task.
 
@@ -91,11 +103,17 @@ Invoke a discovered skill explicitly with Pi's command syntax:
 /skill:code-structure <design question>
 ```
 
-Run `/reload` after changing installed skills. Set `disable-model-invocation: true` in a skill's frontmatter if you want it available only by explicit invocation; this fork has not changed the bundled frontmatter to impose that choice.
+Start the complete workflow manually:
 
-For the full workflow, ask Pi to follow this repository's `AGENTS.md` and supply the task requirements. This fork does not yet provide a `software-factory` wrapper skill. If a skill is not installed, the agent can read its `SKILL.md` from this checkout directly. File-reading instructions are portable; slash commands are not.
+```text
+/skill:software-factory Implement <feature and acceptance criteria>
+```
 
-See the [Pi instructions in AGENTS.md](AGENTS.md#pi-specific-instructions) and [Pi skill documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md). Editing this clone does not update existing copies in `~/.agents/skills/`.
+The entry point is explicit-only. Component skills retain their existing invocation settings; calling a component alone does not start the complete workflow. Run `/reload` after changing installed skills. Other supporting harnesses use their own explicit invocation syntax.
+
+If the skill is not installed, explicitly ask the agent to follow `software-factory/SKILL.md` in this checkout. It reads the same bundled rules; there is no need to paste the workflow into your prompt.
+
+See the [Pi instructions in the workflow](software-factory/WORKFLOW.md#pi-specific-instructions) and [Pi skill documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md). Editing this clone does not update existing copies in `~/.agents/skills/`.
 
 ## Adding a new skill
 
