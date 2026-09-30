@@ -27,7 +27,8 @@ inventing them.
 
 The adaptations so far separate scope and harness guidance, remove the web
 screenshot-comparison skill and make branch selection project-aware. Overlap
-handling, broader verification and the Greptile gate remain for later discussion.
+handling now uses a trial risk assessment rather than a blanket stop. Broader
+verification and the Greptile gate remain for later discussion.
 
 ## Workflow
 
@@ -66,9 +67,12 @@ wrote or changed, not to prose you didn't touch.
   branch selected as their base or PR target.
 - One worktree and one branch per task and per agent — never reuse or modify
   another agent's worktree, branch, or uncommitted work.
-- **Scope check** before starting: skim open PRs' changed files
-  (`gh pr list`, `gh pr diff <n> --name-only`) and look for uncommitted work
-  in shared checkouts. On overlap, stop and ask for direction.
+- Before implementation, follow the
+  [overlap assessment](new-feature/SKILL.md#overlap-assessment) and
+  [integration responsibility](new-feature/SKILL.md#integration-responsibility)
+  rules. Inspect relevant changes, proceed with explained low-risk overlap,
+  and ask about uncertain compatibility or conflicting behavior. Pause only
+  affected work; shared filenames alone do not require a stop.
 - Never force-push an integration branch or use plain `--force`. Use
   `--force-with-lease` only on your own task branch and within project permissions.
 - Resolve lockfile conflicts by regenerating, never by hand-merging.

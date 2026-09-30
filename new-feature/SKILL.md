@@ -48,11 +48,10 @@ workspace history.
 1. **Select and sync**: resolve branch selection above, then `git fetch origin`.
    Verify the selected remote base exists before creating the worktree.
 
-2. **Scope check**: run `gh pr list` and skim the open PRs' changed files
-   (`gh pr diff <n> --name-only`). If your task needs files another open PR
-   is editing, **stop and ask for direction** instead of proceeding. Also
-   check for uncommitted work in the checkout — another agent may be
-   mid-task.
+2. **Scope check**: run `gh pr list`, inspect changed-file lists
+   (`gh pr diff <n> --name-only`), then read relevant diffs for shared files.
+   Check for uncommitted work in shared checkouts without changing it. Apply
+   the overlap assessment below before implementing the affected area.
 
 3. **Name the task**: lowercase-with-hyphens plus a short unique suffix,
    e.g. `user-auth-0816a`. If `git worktree add` fails because the name
@@ -80,6 +79,48 @@ workspace history.
    Then install dependencies fresh inside the worktree (worktrees don't
    share `node_modules`/virtualenvs) and confirm the runtime version the
    repo requires before running anything.
+
+## Overlap assessment
+
+Shared filenames are a warning signal, not an automatic blocker. Classify the
+actual changes and their contracts, not just the names of the files. Separate
+worktrees prevent overwrites; they do not prove branches will work together.
+
+| Finding | Action |
+| --- | --- |
+| Compatible, independent edits | Proceed and report the overlap and expected integration work. Documentation, separate build entries and startup wiring can qualify, but only after inspecting their meaning and ordering. |
+| Same implementation or interface with unclear compatibility | Ask before editing the affected area. Continue independent work that does not rely on the unresolved decision. |
+| Conflicting behavior, duplicated functionality or unresolved dependency | Pause affected work and request a decision on ownership, contracts or dependency order. |
+
+For each relevant overlap, record the PR or local work involved, the actual
+changes, classification, rationale and proposed integration action in the task's
+plan or progress report. Reassess when scope or a relevant dependency changes.
+If relevant diffs are unavailable, disclose the gap; do not classify uninspected
+shared changes as low-risk. Ask when that missing information prevents a safe
+assessment of the affected work.
+
+Compatible edits in the same lines may need a mechanical Git resolution. A
+clean merge can still hide a behavioral conflict. Keep architectural decisions
+and permission requirements separate from the overlap assessment; low-risk
+file overlap does not authorize an architecture change.
+
+## Integration responsibility
+
+- The task agent owns keeping its branch compatible with the agreed base and
+  resolving its own changes within project policy and permissions.
+- Modify only the assigned branch and worktree. Preserve other agents' branches,
+  worktrees and uncommitted work.
+- Get user agreement before coordinating changes across branches, changing the
+  agreed dependency order or rewriting published history. Existing explicit
+  authorization remains valid within its scope.
+- Resolve uncertain semantic conflicts with the user rather than guessing.
+  After integration, verify the combined behavior under the project's testing
+  policy. If checks are not authorized, provide commands and state what remains
+  unverified.
+
+This policy is a trial. If it allows repeated integration failures or still
+causes unnecessary interruptions, record those cases and revisit the rule with
+the user rather than silently changing it.
 
 ## Remember
 

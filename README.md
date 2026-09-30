@@ -14,7 +14,7 @@ The first adaptation separates a generic workflow core from Pi-specific usage an
 
 The web screenshot-comparison skill and its upload scripts have been removed. Evidence should fit the change: test output, serial logs, protocol traces, terminal captures or hardware observations. A screenshot comparison table is not a required delivery artifact.
 
-Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap checks, integration ownership, the broader verification skill and review gates remain topics for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
+Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap handling is now a trial risk-based policy: inspect relevant changes, proceed with compatible independent edits, and ask about unclear compatibility, conflicting behavior or unresolved dependencies. Each task agent owns compatibility with its agreed base; cross-branch coordination and published-history rewrites require user agreement. The broader verification skill and review gates remain topics for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
 
 ## Available skills
 
@@ -57,7 +57,7 @@ Use it when greploop's trigger gets "Too many files changed for review".
 
 ### [new-feature](new-feature/SKILL.md)
 
-Starts a task in an isolated Git worktree after searching the project's instructions and development documentation for branching policy. It states the starting base and PR target before creating the workspace, defaults to `origin/main` and a PR to `main` when no policy or override exists, and asks when selection is ambiguous or depends on an unmerged feature. It also covers unique task naming, scope checks, dependency setup and cleanup after merge.
+Starts a task in an isolated Git worktree after searching the project's instructions and development documentation for branching policy. It states the starting base and PR target before creating the workspace, defaults to `origin/main` and a PR to `main` when no policy or override exists, and asks when selection is ambiguous or depends on an unmerged feature. It also covers unique task naming, risk-based overlap assessment, integration responsibility, dependency setup and cleanup after merge. See its [overlap rules](new-feature/SKILL.md#overlap-assessment); shared filenames alone no longer block work.
 
 Use it when:
 
