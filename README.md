@@ -14,7 +14,7 @@ The first adaptation separates a generic workflow core from Pi-specific usage an
 
 The web screenshot-comparison skill and its upload scripts have been removed. Evidence should fit the change: test output, serial logs, protocol traces, terminal captures or hardware observations. A screenshot comparison table is not a required delivery artifact.
 
-Branch and dependency policy, overlap checks, the broader verification skill and review gates remain topics for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
+Branch selection now follows project-specific policy, with `origin/main` and a PR to `main` as the fallback. Overlap checks, integration ownership, the broader verification skill and review gates remain topics for later discussion. The consuming project's architecture, permissions and test-execution policy take precedence over this collection's generic guidance.
 
 ## Available skills
 
@@ -57,7 +57,7 @@ Use it when greploop's trigger gets "Too many files changed for review".
 
 ### [new-feature](new-feature/SKILL.md)
 
-Starts every new task in an isolated Git worktree branched from `origin/main` so multiple agents can work on the same repo in parallel without conflicts. It covers unique task naming, a scope check against open PRs, fresh dependency installs, and cleanup after merge.
+Starts a task in an isolated Git worktree after searching the project's instructions and development documentation for branching policy. It states the starting base and PR target before creating the workspace, defaults to `origin/main` and a PR to `main` when no policy or override exists, and asks when selection is ambiguous or depends on an unmerged feature. It also covers unique task naming, scope checks, dependency setup and cleanup after merge.
 
 Use it when:
 

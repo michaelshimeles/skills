@@ -25,16 +25,16 @@ a known installation. Resolve bundled scripts and references relative to the
 skill directory. If instructions are unavailable, report that instead of
 inventing them.
 
-The adaptations so far separate scope and harness guidance and remove the web
-screenshot-comparison skill. The inherited branching policy, broader verification
-skill and Greptile gate remain for later discussion; do not assume those
-unresolved policies have already been redesigned.
+The adaptations so far separate scope and harness guidance, remove the web
+screenshot-comparison skill and make branch selection project-aware. Overlap
+handling, broader verification and the Greptile gate remain for later discussion.
 
 ## Workflow
 
-1. **Isolate.** Read `new-feature/SKILL.md`. Every new feature starts in a fresh Git
-   worktree branched from `origin/main` so agents can work in parallel
-   without conflicts. Never build on `main`.
+1. **Isolate.** Read `new-feature/SKILL.md` and follow its branch-selection rules.
+   Find the project's policy, state the starting base and PR target, then create
+   an isolated task branch and worktree. Without project rules or a task override,
+   the default is `origin/main` with a PR targeting `main`.
 2. **Build.** Read `code-structure/SKILL.md` where its advice fits the
    project's architecture. Its service-layer guidance separates orchestration
    from reusable mechanics; it does not replace the project's module ownership
@@ -62,14 +62,15 @@ wrote or changed, not to prose you didn't touch.
 
 ## Multi-agent rules
 
-- Never commit directly to `main`.
+- Commit task changes on their assigned branch, not directly on the integration
+  branch selected as their base or PR target.
 - One worktree and one branch per task and per agent — never reuse or modify
   another agent's worktree, branch, or uncommitted work.
 - **Scope check** before starting: skim open PRs' changed files
   (`gh pr list`, `gh pr diff <n> --name-only`) and look for uncommitted work
   in shared checkouts. On overlap, stop and ask for direction.
-- Never force-push to `main` — and never plain `--force` anywhere; only
-  `--force-with-lease`, only on your own task branch.
+- Never force-push an integration branch or use plain `--force`. Use
+  `--force-with-lease` only on your own task branch and within project permissions.
 - Resolve lockfile conflicts by regenerating, never by hand-merging.
 - Worktrees don't isolate shared resources: confirm a dev-server port
   answers *your* process before trusting it, and don't run schema
@@ -85,8 +86,10 @@ wrote or changed, not to prose you didn't touch.
    project's maintained documentation.
 3. Assemble the evidence captured along the way. Include before/after results
    when they help demonstrate the change; no screenshot table is required.
-4. Commit with a clear message, rebase onto the latest `origin/main`, and
-   rerun the checks only within the project's authorization policy.
+4. Commit with a clear message. If rebasing is appropriate under the project's
+   policy, use the task's selected base rather than hard-coded `origin/main`.
+   Resolve any changed dependency or target first. Rerun checks only within the
+   project's authorization policy.
 5. Push (`git push -u origin <branch>`; after rebasing an already-pushed
    branch, `--force-with-lease`).
 6. Open the PR. The body must explain what changed, how it was tested (every

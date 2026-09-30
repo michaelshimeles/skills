@@ -1,13 +1,33 @@
 ---
 name: new-feature
-description: Start a new task in an isolated Git worktree branched from origin/main so multiple agents can work on the same repo in parallel without conflicts. Use at the beginning of every new feature, fix, or task — before writing any code.
+description: Start a new task in an isolated Git worktree after resolving the project's branching policy, starting base and PR target. Use at the beginning of every new feature, fix, or task before writing code.
 ---
 
 # New Feature
 
-Every task gets its own worktree and branch, created from the latest
-`origin/main`. Never build on `main`, and never reuse another agent's
-worktree or branch.
+Every task gets its own worktree and task branch. Resolve the starting base and
+PR target before creating it. Work on the task branch rather than directly on
+an integration branch, and never reuse another agent's workspace.
+
+## Branch selection
+
+1. Search the target project's `AGENTS.md`, `README.md`, `CONTRIBUTING.md` and
+   linked development/release documentation for branching rules. Branch lists,
+   the currently checked-out branch and CI filters are clues, not a policy.
+2. Follow documented project rules and explicit task instructions. If they
+   conflict, ask before creating a worktree.
+3. Without a project-specific rule or explicit override, default to starting
+   from `origin/main` with a PR targeting `main`. If that branch or remote does
+   not exist, ask rather than choosing another silently.
+4. State the selected starting base and PR target before creating the worktree.
+   Ask for confirmation when policy is ambiguous, a non-default choice has not
+   already been authorized, or work depends on an unmerged feature. Record the
+   dependency and intended integration order; do not assume the starting base
+   and final PR target are interchangeable.
+5. Keep these selections with the task and use the selected base for later
+   synchronization or rebasing. If it merges, disappears or changes role, resolve
+   the new base and target before proceeding. Tags name fixed revisions and are
+   not PR target branches.
 
 ## Harness deltas — read first
 
@@ -19,9 +39,14 @@ worktree or branch.
   keep the assigned branch and worktree, apply steps 2 and 5.
 - Any other harness: follow all steps.
 
+Resolve branch selection even when the harness supplies the worktree. If its
+assigned base conflicts with the project's policy, report it before changing
+workspace history.
+
 ## Steps
 
-1. **Sync**: `git fetch origin`.
+1. **Select and sync**: resolve branch selection above, then `git fetch origin`.
+   Verify the selected remote base exists before creating the worktree.
 
 2. **Scope check**: run `gh pr list` and skim the open PRs' changed files
    (`gh pr diff <n> --name-only`). If your task needs files another open PR
@@ -37,7 +62,7 @@ worktree or branch.
 
    ```bash
    git worktree add <worktrees-dir>/<task-name> \
-     -b <branch-prefix>/<task-name> origin/main
+     -b <branch-prefix>/<task-name> <selected-remote-base>
    ```
 
    Use a **gitignored** directory for worktrees (e.g. `.claude/worktrees/`
@@ -49,7 +74,7 @@ worktree or branch.
 
    ```bash
    cd <worktrees-dir>/<task-name>
-   git branch --show-current   # must print your new branch, not main
+   git branch --show-current   # must print your assigned task branch
    ```
 
    Then install dependencies fresh inside the worktree (worktrees don't
