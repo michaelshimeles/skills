@@ -1,6 +1,7 @@
-# Working on the delivery workflow
+# Working on personal skills
 
-This repository contains Sille's personal adaptation of
+This repository contains Sille's personal skills and workflows. The delivery
+workflow originated as an adaptation of
 [michaelshimeles/skills](https://github.com/michaelshimeles/skills).
 
 Before changing this collection, read

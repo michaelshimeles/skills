@@ -1,6 +1,12 @@
-# Agent-assisted delivery workflow
+# Personal skills
 
-Sille's personal fork of [michaelshimeles/skills](https://github.com/michaelshimeles/skills), adapted from experiments with the Helios Lite firmware project.
+Sille's personal collection of agent skills and workflows. It started as a fork
+of [michaelshimeles/skills](https://github.com/michaelshimeles/skills), adapted
+through experiments with the Helios Lite firmware project.
+
+The `software-factory` skill is the manual entry point for the delivery workflow.
+Other personal skills can be added independently. External collections, such as
+Matt Pocock's skills, can remain installed from their original sources.
 
 The goal is repeatable delivery with clear human involvement. The workflow is independent of model and coding-agent harness. OpenAI, Anthropic and other model choices follow the same delivery rules. Harness-specific instructions belong in separate sections, starting with Pi.
 
@@ -84,13 +90,121 @@ To use it in another project, reference or adapt it alongside that project's exi
 
 ## Installation
 
-Use `npx skills` to install from this fork, selecting the target agent and scope supported by the installer:
+This collection uses standard `SKILL.md` directories and is compatible with the
+[`skills` CLI](https://github.com/vercel-labs/skills). No custom installer or
+installation skill is required. You need Node.js with npm/npx, access to the source
+and permission to write to the selected installation directory.
+
+Install the delivery workflow's five skills: `software-factory`, `new-feature`,
+`code-structure`, `evidence-driven-testing` and `unslop`. The entry point needs its
+component skills and bundled `WORKFLOW.md` from the same version.
+
+### Install from a local checkout
+
+While developing this workflow, install the current local files. From this
+repository's root:
 
 ```bash
-npx skills add sillevl/skills-software-factory
+npx skills add . --global --agent pi --skill \
+  software-factory new-feature code-structure evidence-driven-testing unslop
 ```
 
-Installing skills does not activate the entire delivery workflow. Discovery and automatic invocation depend on the harness and each skill's frontmatter. Review the instructions before enabling them, especially rules that run commands or publish evidence. Installation from upstream remains available through `npx skills add michaelshimeles/skills`.
+Or supply the checkout's absolute path from any directory:
+
+```bash
+npx skills add /home/sille/work/ecofix/skills \
+  --global --agent pi --skill \
+  software-factory new-feature code-structure evidence-driven-testing unslop
+```
+
+The explicit names select only the delivery workflow's skills, even as this
+repository grows. Use `--skill '*'` only if you intend to install every skill in
+this repository. These commands do not remove unrelated collections. Review any
+overwrite prompts if an identically named skill is installed from another source.
+
+### Install from GitHub
+
+After publishing the intended version to this fork's default branch:
+
+```bash
+npx skills add sillevl/skills \
+  --global --agent pi --skill \
+  software-factory new-feature code-structure evidence-driven-testing unslop
+```
+
+This installs published files, not unpushed commits or local edits. Use local
+installation while changes exist only in your checkout. For a deliberate
+non-default branch, tag or commit, use a GitHub tree URL for that revision as the
+source rather than assuming the shorthand selects it.
+
+Before installing, inspect the skills the source exposes:
+
+```bash
+npx skills add sillevl/skills --list
+```
+
+To use existing SSH authentication, the source can instead be
+`git@github.com:sillevl/skills.git`.
+
+### Scope and other harnesses
+
+`--global --agent pi` installs to Pi's user-level skills location,
+`~/.agents/skills/`, so the workflow is available across projects and worktrees.
+Omit `--global` to install project-locally; review generated skill files and
+installer metadata before committing them to a consuming project.
+
+For another supported harness, replace `pi` with its installer agent identifier.
+Model provider selection is separate from the harness. Avoid `--all` unless you
+intend to install to every supported agent, not just Pi.
+
+The installer can link agent directories to its canonical installed copies or
+copy files with `--copy`. Those links do not imply a live link to your development
+checkout. Installing skills does not activate the entire workflow or replace a
+project's instructions. Review the skills before enabling them, especially rules
+that run commands or publish changes.
+
+### Updates
+
+For local development, rerun the local `skills add` command after changing this
+checkout. Do not assume installed copies track local edits automatically.
+
+For a published installation, update only this collection's skills:
+
+```bash
+npx skills update --global \
+  software-factory new-feature code-structure evidence-driven-testing unslop
+```
+
+Review the recorded source and any prompts. Updates follow installer provenance;
+if it still identifies the original upstream or a local source, reinstall from
+the intended fork/version instead. An unrestricted `npx skills update` can also
+update unrelated collections, such as Matt Pocock's skills.
+
+After installation or updates, run `/reload` in Pi or restart it. Inspect startup
+diagnostics and confirm `/skill:software-factory` is available.
+
+### Inspect and remove
+
+List installed user-level skills for Pi:
+
+```bash
+npx skills list --global --agent pi
+```
+
+Remove only this collection's five skills through the installer:
+
+```bash
+npx skills remove --global --agent pi --skill \
+  software-factory new-feature code-structure evidence-driven-testing unslop
+```
+
+This preserves unrelated skills. Reload or restart Pi after removal. Prefer the
+installer's remove command over deleting directories manually so installation
+records are managed too. Inspect any remaining metadata when cleaning up a
+previous manual deletion.
+
+These commands are installation guidance, not evidence that an installation or
+update has been performed.
 
 ### Pi-specific usage
 
