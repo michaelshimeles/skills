@@ -36,10 +36,10 @@ verification and the Greptile gate remain for later discussion.
    Find the project's policy, state the starting base and PR target, then create
    an isolated task branch and worktree. Without project rules or a task override,
    the default is `origin/main` with a PR targeting `main`.
-2. **Build.** Read `code-structure/SKILL.md` where its advice fits the
-   project's architecture. Its service-layer guidance separates orchestration
-   from reusable mechanics; it does not replace the project's module ownership
-   and dependency rules.
+2. **Build.** Read `code-structure/SKILL.md`. Establish the project's architecture,
+   choose cohesive ownership and explicit public contracts, and refactor shared
+   behavior only when justified. Service-layer extraction is an option, not a
+   required layout. Get agreement before departing from established boundaries.
 3. **Prove.** Read `evidence-driven-testing/SKILL.md`. Verify with the repo's checks
    plus runtime evidence. Capture the **before** state while reproducing the
    issue — prior to fixing it, when it is cheapest — and the **after** once

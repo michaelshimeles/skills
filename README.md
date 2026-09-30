@@ -20,16 +20,16 @@ Branch selection now follows project-specific policy, with `origin/main` and a P
 
 ### [code-structure](code-structure/SKILL.md)
 
-Service layer architecture guidance. Enforces a two-layer separation where **actions** orchestrate domain rules (the "why/when") and a **service layer** centralizes reusable operational mechanics (the "how").
+Architecture-aware guidance for ownership, public contracts and shared capabilities. Read the project's architectural rules and inspect existing modules before choosing a boundary. Service-layer extraction is an option, not a required layout.
 
 Use it when:
 
-- Multiple workflows duplicate the same operational logic
-- You're deciding what belongs in actions vs. shared services
-- A bug fix in one flow doesn't propagate to others doing the same thing
-- Adding a feature that shares mechanics with existing ones
+- Deciding which module owns behavior or shared policy
+- Evaluating whether similar code represents a genuinely shared capability
+- Designing dependencies, lifetimes and failure semantics at a public interface
+- Refactoring callers incrementally without creating speculative abstractions
 
-Includes a migration checklist for extracting shared logic safely and a table of anti-patterns to avoid (god services, leaky services, over-abstraction).
+The skill preserves project terminology and dependency rules, requires agreement before architectural deviations, and follows the project's test-execution policy.
 
 ### [evidence-driven-testing](evidence-driven-testing/SKILL.md)
 

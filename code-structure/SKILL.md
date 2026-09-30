@@ -1,116 +1,109 @@
 ---
 name: code-structure
-description: Use when multiple workflows duplicate the same operational logic, when deciding what belongs in actions vs shared services, or when refactoring repeated operational blocks across domain flows. Use when adding new features that share mechanics with existing ones.
+description: Use when choosing code ownership, designing shared capabilities or refactoring duplicated behavior. Follow the project's architecture before proposing module boundaries or shared abstractions.
 ---
 
-# Service Layer Architecture
+# Architecture-aware code structure
 
-## Overview
+Improve ownership and reuse within the project's architecture. This skill does
+not prescribe an actions/service-layer split, directory layout or language.
 
-**Two-layer separation:** Actions orchestrate domain rules (the "why/when"), while a service layer centralizes reusable operational mechanics (the "how").
+## 1. Establish the architectural context
 
-This prevents duplicated code, inconsistent behavior, and bugs fixed in one path but not others.
+Before designing a boundary, read the target project's `AGENTS.md`, architecture
+guides, relevant ADRs and contribution documentation. Follow their links for the
+rules affecting this change. Inspect the modules and callers involved.
 
-## When to Use
+Identify:
 
-- Multiple callers need the same low-level operation (sandbox creation, email sending, payment processing)
-- You're copy-pasting operational logic between action files
-- A bug fix in one workflow doesn't propagate to others doing the same thing
-- Adding a new feature that shares mechanics with existing flows
+- Who owns the behavior and its product policy.
+- Which dependency directions and public interfaces are allowed.
+- Where concrete adapters, persistence and composition belong.
+- Required lifetime, concurrency, failure and recovery semantics.
+- Which contracts are implemented, planned or still undecided.
 
-**Don't use when:** Logic is truly domain-specific and used by only one caller.
+Project rules take precedence over patterns in this skill. If documentation is
+missing, inspect existing code and describe the observed conventions without
+calling them an agreed policy. Ask about ambiguity that affects the proposed
+boundary. Flag a departure from established architecture before implementation;
+get agreement and follow the project's decision-recording process.
 
-## Core Pattern
+Completion: explain the proposed owner, dependencies and public boundary in
+project terminology, including any decision that still needs approval.
 
-```
-Orchestration Layer (Actions)          Service Layer (Shared Mechanics)
-├── owns business rules                ├── owns reusable operations
-├── owns state transitions             ├── owns provider/SDK interactions
-├── owns auth/ownership checks         ├── owns command execution details
-├── owns failure classification        ├── owns health checks / readiness
-├── owns retries / user-facing errors  └── returns structured results
-└── calls service functions
-```
+## 2. Decide whether sharing is justified
 
-**Rule of thumb:**
-- "What this product flow means" → keep in actions
-- "How to do this operation reliably" → move to service layer
+Compare callers' semantics, not just similar-looking code. Repeated syntax can
+represent different policies and need different owners.
 
-## Quick Reference
+Consider extraction when independent consumers need the same coherent capability
+or when a resource owner or test seam has a clear purpose. Multiple callers are
+evidence, not an automatic instruction to create a shared service. A single
+caller can justify a boundary for resource lifetime or testing; it does not
+justify speculative reuse.
 
-| Design Principle | Do | Don't |
-|---|---|---|
-| API shape | Composable capability blocks | One giant "do everything" method |
-| Inputs/outputs | Explicit params, structured returns | Hidden global state, reaching into DB |
-| Migration | Extract one block, replace one caller, verify, then migrate rest | Refactor everything at once |
-| Domain logic | Keep auth, policy, error classification in actions | Let service mutate domain state directly |
-| Extraction trigger | Logic repeated across 2+ callers | Logic used once (over-abstraction) |
+Keep behavior local when its meaning belongs to one module. Avoid creating a
+shared layer merely because code is hardware-independent or duplicated. Do not
+invent future consumers, schemas or requirements to justify an abstraction.
 
-## Designing Service Functions
+Completion: state why reuse or a new boundary is needed, or why local ownership
+is preferable. Identify the real consumers and behavior that must remain stable.
 
-Design as **capability blocks**, not monoliths:
+## 3. Design a cohesive contract
 
-```ts
-// Good: composable, each caller chooses what to use
-createManagedSandbox(...)
-prepareRepo(...)
-detectPackageManager(...)
-installDependencies(...)
-runBuildCommand(...)
-startSandboxRuntime(...)
-```
+- Expose a focused capability rather than a collection of unrelated utilities.
+- Make inputs, outputs and dependencies explicit. Avoid hidden global lookup
+  where constructor or function injection fits the project's conventions.
+- Describe ownership, lifetime, concurrency and failure behavior at the public
+  boundary. Include resource limits and partial-success semantics when relevant.
+- Keep consumers on the owning module's public interface. Keep implementation
+  details and vendor types private where the project requires that separation.
+- Put policy with its documented owner. Shared services may own domain policy
+  when the architecture assigns it there; they are not necessarily pure mechanics.
+- Put storage and SDK access in the designated owner or adapter. Persistence is
+  not inherently a design error; bypassing an agreed boundary is.
+- Report failures using the project's error conventions. Preserve meaningful
+  distinctions instead of swallowing errors or forcing a new result format.
 
-Each function should:
-- Accept all required data as **explicit parameters**
-- Return **structured outputs** (e.g., `{ ready, previewUrl, proxyPort }`)
-- Never reach into database/state directly
-- Make failure explicit (structured results, not swallowed errors)
+Service-layer extraction is one possible pattern when the project already uses
+it or approves it. In that pattern, actions can orchestrate a flow while services
+own reusable operations. Do not impose that vocabulary or dependency structure
+on a project with different boundaries.
 
-This lets callers choose strict vs relaxed behavior per flow.
+For example, a capability-oriented firmware project may place product outcomes
+in features, shared domain capabilities in services, and generic mechanisms in
+platform modules, with ports and adapters inside each module. A generic reboot
+mechanism can belong in platform while its operator command belongs in a feature.
+Use the actual project's rules to decide; this example is not a required layout.
 
-## Migration Checklist
+Completion: callers can use the contract without reaching into another module's
+private implementation, and the proposal explains the relevant failure semantics.
 
-When extracting shared logic:
+## 4. Refactor incrementally and verify
 
-1. Write the flow in action code first (clear behavior)
-2. Mark repeated operational chunks across callers
-3. Extract **only** repeated, non-domain chunks to service
-4. Replace one caller → verify → replace remaining callers
-5. Keep domain policy in actions (auth, status transitions, error classification)
-6. Run verification: typecheck, lint, confirm all flows still work
+1. Identify current behavior and the affected callers. Add or update relevant
+   tests as part of the change, following the project's test conventions.
+2. Extract one coherent capability into its approved owner.
+3. Migrate one caller and review its behavior and dependency changes before
+   migrating the rest. Preserve intentional caller-specific policy.
+4. Update composition, documentation and decision records where required.
+5. Verify under the project's execution and approval policy. This skill does
+   not authorize tests. When execution is reserved for the user, provide the
+   commands and mark checks unexecuted rather than claiming they passed.
 
-## Anti-Patterns
+Completion: account for every affected caller, any changed behavior or contract,
+verification evidence and remaining unverified checks.
 
-| Anti-Pattern | Problem |
-|---|---|
-| **God service** | One huge function hides all control flow |
-| **Leaky service** | Service mutates database tables directly |
-| **Inconsistent API** | Each function uses different argument styles and error semantics |
-| **Over-abstraction** | Extracting logic used by only one caller |
+## Review checks
 
-## Example: Email Service (Simple)
+| Warning sign | Question to resolve |
+| --- | --- |
+| Unrelated operations grouped into one service | Does the module have one coherent owner and purpose? |
+| Similar code extracted despite different semantics | Are callers sharing a capability or merely syntax? |
+| Consumer reaches into private implementation | Is the public contract sufficient and at the right boundary? |
+| Hidden state or unclear failure behavior | Are dependencies and observable outcomes explicit? |
+| Abstraction created for hypothetical callers | What current requirement justifies it? |
+| Broad refactor bundled with a feature | Can the change be smaller without losing the required behavior? |
 
-```ts
-// emailService.ts — shared mechanics
-export async function sendWelcomeEmail(params: { to: string; name: string }) {
-  const html = `<h1>Welcome ${params.name}</h1>`;
-  await emailProvider.send(params.to, "Welcome", html);
-}
-
-// userSignup.ts — orchestration (owns WHEN to send)
-if (user.marketingOptIn) {
-  await sendWelcomeEmail({ to: user.email, name: user.name });
-}
-
-// adminInvite.ts — orchestration (different business rule, same mechanic)
-await sendWelcomeEmail({ to: invitee.email, name: invitee.name });
-```
-
-## Mental Model
-
-```
-New feature? → Write in action first → See repeated ops? → Extract to service
-                                      → No repetition?  → Keep in action
-```
-
-Your architecture in one sentence: **Actions orchestrate domain rules, while the service layer centralizes reusable operational mechanics with a composable, explicit-input API.**
+Use these checks to review the design, not to override documented architectural
+choices or require a wrapper around every function.
