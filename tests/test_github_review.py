@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -204,18 +205,39 @@ def test_start_records_baseline_and_posts_the_selected_trigger_only_once(tmp_pat
     assert len(github.posts) == 1
 
 
+def running_since(minutes):
+    started = datetime.fromisoformat(BEFORE.replace("Z", "+00:00"))
+    return lambda: started + timedelta(minutes=minutes)
+
+
 def test_start_does_not_interrupt_an_existing_review(tmp_path):
     github = FakeGitHub([{"checks": [check(status="in_progress")], "comments": [], "reviews": []}])
+    path = tmp_path / "attempt.json"
     with pytest.raises(REVIEW.ReviewError, match="already running"):
-        REVIEW.start(github, "owner/repo", 123, "@greptile", tmp_path / "attempt.json", [BOT])
+        REVIEW.start(github, "owner/repo", 123, "@greptile", path, [BOT], now=running_since(5))
     assert not github.posts
+    assert not path.exists()
+
+
+def test_start_posts_past_a_stuck_check_and_keeps_it_in_the_baseline(tmp_path):
+    stuck = check(status="in_progress")
+    github = FakeGitHub([{"checks": [stuck], "comments": [], "reviews": []}])
+    path = tmp_path / "attempt.json"
+    REVIEW.start(github, "owner/repo", 123, "@greptile", path, [BOT], stuck_after=1800, now=running_since(31))
+    assert len(github.posts) == 1
+    assert json.loads(path.read_text())["checks"] == [stuck]
 
 
 def test_start_does_not_post_if_head_changes_during_snapshot(tmp_path):
     github = FakeGitHub(heads=[HEAD, OLD_HEAD])
+    path = tmp_path / "attempt.json"
     with pytest.raises(REVIEW.ReviewError, match="head changed"):
-        REVIEW.start(github, "owner/repo", 123, "@greptile", tmp_path / "attempt.json", [BOT])
+        REVIEW.start(github, "owner/repo", 123, "@greptile", path, [BOT])
     assert not github.posts
+    # Nothing was posted, so the same attempt path can be used for the retry.
+    github.heads = [HEAD]
+    REVIEW.start(github, "owner/repo", 123, "@greptile", path, [BOT])
+    assert len(github.posts) == 1
 
 
 def test_wait_polls_until_fresh_feedback_without_posting():

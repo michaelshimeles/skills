@@ -7,10 +7,12 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
 DEFAULT_BOTS = ("greptile-apps[bot]", "greptile-apps-staging[bot]")
+STUCK_CHECK_SECONDS = 1800
 
 
 class ReviewError(RuntimeError):
@@ -138,21 +140,41 @@ class GitHub:
         }
 
 
-def start(github, repo, pr, trigger, output, bots):
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def started_before(check, cutoff):
+    started = check.get("started_at")
+    return bool(started) and datetime.fromisoformat(started.replace("Z", "+00:00")) < cutoff
+
+
+def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECONDS, now=utc_now):
     # Reserve the path before posting so rerunning a command cannot post twice.
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x") as stream:
         json.dump({"status": "preparing", "repo": repo, "pr": pr}, stream)
-    head = github.head(repo, pr)
-    snapshot = github.snapshot(repo, pr, head)
-    if any(
-        "greptile" in check.get("name", "").lower()
-        and check.get("status") != "completed"
-        for check in snapshot["checks"]
-    ):
-        raise ReviewError("Greptile is already running; let that attempt finish before starting another")
-    if github.head(repo, pr) != head:
-        raise ReviewError("PR head changed before the trigger; use a new attempt path")
+    try:
+        head = github.head(repo, pr)
+        snapshot = github.snapshot(repo, pr, head)
+        cutoff = now() - timedelta(seconds=stuck_after)
+        running = [
+            check for check in snapshot["checks"]
+            if "greptile" in check.get("name", "").lower()
+            and check.get("status") != "completed"
+            and not started_before(check, cutoff)
+        ]
+        if running:
+            raise ReviewError(
+                f"Greptile check {running[0]['id']} is already running; let it finish before starting another. "
+                f"Checks running longer than {stuck_after}s are treated as stuck."
+            )
+        if github.head(repo, pr) != head:
+            raise ReviewError("PR head changed before the trigger")
+    except BaseException:
+        # Only release the reservation before posting the trigger.
+        output.unlink()
+        raise
     comment = github.command(
         "api", f"repos/{repo}/issues/{pr}/comments", "--method", "POST",
         "-f", f"body={trigger} review",
@@ -200,6 +222,8 @@ def main():
     begin.add_argument("--trigger", choices=("@greptile", "@greptile-apps"), default="@greptile")
     begin.add_argument("--output", type=Path, required=True)
     begin.add_argument("--bot", action="append", help="exact trusted login; repeat for multiple bots")
+    begin.add_argument("--stuck-after", type=positive, default=STUCK_CHECK_SECONDS,
+                       help="seconds after which a running Greptile check no longer blocks a new trigger")
     wait = commands.add_parser("wait", help="read results without posting another trigger")
     wait.add_argument("attempt", type=Path)
     wait.add_argument("--timeout", type=positive, default=600)
@@ -208,7 +232,9 @@ def main():
     github = GitHub()
     try:
         if args.command == "start":
-            result = start(github, args.repo, args.pr, args.trigger, args.output, args.bot or DEFAULT_BOTS)
+            result = start(
+                github, args.repo, args.pr, args.trigger, args.output, args.bot or DEFAULT_BOTS, args.stuck_after,
+            )
         else:
             result = wait_for_review(github, json.loads(args.attempt.read_text()), args.timeout, args.interval)
         print(json.dumps(result, indent=2))

@@ -19,10 +19,12 @@ python3 "$REVIEW" wait .artifacts/greploop/attempt-1.json \
 loop. Pass `--trigger @greptile-apps` for the alternate route. The helper
 snapshots checks, comments, and reviews before posting and records the trigger's
 server timestamp and current head. It refuses to overwrite an attempt file.
-If start fails after posting, inspect the PR and saved state before retrying;
-use `wait` on a confirmed attempt instead of posting again.
-If a Greptile check is already running, start refuses to post another trigger.
-Let that run finish, then use a new attempt path to request a fresh review.
+If start fails before posting, it removes the attempt file, so you can reuse the
+same path. If it fails after posting, inspect the PR and saved state before
+retrying; use `wait` on a confirmed attempt instead of posting again.
+If a Greptile check is already running, start refuses to post another trigger;
+let that run finish, then rerun start. After `--stuck-after` seconds, 1800 by
+default, start treats a running check as stuck and posts anyway.
 
 `wait` is read-only. It paginates all result sources, verifies the head before
 and after reading, and rejects old completed checks and unchanged summaries.
