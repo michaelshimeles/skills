@@ -134,6 +134,9 @@ class GitHub:
     def head(self, repo, pr):
         return self.command("api", f"repos/{repo}/pulls/{pr}")["head"]["sha"]
 
+    def check_suite(self, repo, suite_id):
+        return self.command("api", f"repos/{repo}/check-suites/{suite_id}")
+
     def snapshot(self, repo, pr, head):
         return {
             "checks": self.pages(f"repos/{repo}/commits/{head}/check-runs?per_page=100&filter=all", "check_runs"),
@@ -146,10 +149,10 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-def stuck(check, cutoff):
-    started = check.get("started_at")
-    # GitHub allows a null start time, which cannot show that the check is active.
-    return not started or datetime.fromisoformat(started.replace("Z", "+00:00")) < cutoff
+def last_activity(github, repo, check):
+    # GitHub allows a null start time; the check suite's last update then dates the check.
+    started = check.get("started_at") or github.check_suite(repo, check["check_suite"]["id"])["updated_at"]
+    return datetime.fromisoformat(started.replace("Z", "+00:00"))
 
 
 def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECONDS, now=utc_now):
@@ -165,7 +168,7 @@ def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECON
             check for check in snapshot["checks"]
             if "greptile" in check.get("name", "").lower()
             and check.get("status") != "completed"
-            and not stuck(check, cutoff)
+            and last_activity(github, repo, check) >= cutoff
         ]
         if running:
             raise ReviewError(

@@ -180,14 +180,18 @@ def test_head_change_invalidates_attempt():
 
 
 class FakeGitHub:
-    def __init__(self, snapshots=None, heads=None):
+    def __init__(self, snapshots=None, heads=None, suites=None):
         self.snapshots = snapshots or [{"checks": [], "comments": [], "reviews": []}]
         self.heads = heads or [HEAD]
+        self.suites = suites or {}
         self.posts = []
         self.polls = 0
 
     def head(self, *_args):
         return self.heads.pop(0) if len(self.heads) > 1 else self.heads[0]
+
+    def check_suite(self, _repo, suite_id):
+        return self.suites[suite_id]
 
     def snapshot(self, *_args):
         self.polls += 1
@@ -234,9 +238,21 @@ def test_start_posts_past_a_stuck_check_and_keeps_it_in_the_baseline(tmp_path):
     assert json.loads(path.read_text())["checks"] == [stuck]
 
 
-def test_start_posts_past_a_queued_check_without_a_start_time(tmp_path):
-    github = FakeGitHub([{"checks": [check(status="queued", started_at=None)], "comments": [], "reviews": []}])
-    REVIEW.start(github, "owner/repo", 123, "@greptile", tmp_path / "attempt.json", [BOT], now=running_since(0))
+def queued_without_a_start_time():
+    queued = check(status="queued", started_at=None, check_suite={"id": 7})
+    return FakeGitHub([{"checks": [queued], "comments": [], "reviews": []}], suites={7: {"updated_at": BEFORE}})
+
+
+def test_newly_queued_check_without_a_start_time_still_blocks(tmp_path):
+    github = queued_without_a_start_time()
+    with pytest.raises(REVIEW.ReviewError, match="already running"):
+        REVIEW.start(github, "owner/repo", 123, "@greptile", tmp_path / "attempt.json", [BOT], now=running_since(5))
+    assert not github.posts
+
+
+def test_queued_check_without_a_start_time_is_stuck_once_its_suite_goes_quiet(tmp_path):
+    github = queued_without_a_start_time()
+    REVIEW.start(github, "owner/repo", 123, "@greptile", tmp_path / "attempt.json", [BOT], now=running_since(31))
     assert len(github.posts) == 1
 
 
@@ -284,6 +300,12 @@ def test_paginated_api_results_include_later_pages(monkeypatch):
     assert [item["id"] for item in github.pages("endpoint", "check_runs")] == [1, 2]
     monkeypatch.setattr(github, "command", lambda *args: [[summary()], [summary(id=11)]])
     assert [item["id"] for item in github.pages("endpoint")] == [10, 11]
+
+
+def test_check_suite_reads_the_suite_endpoint(monkeypatch):
+    github = REVIEW.GitHub()
+    monkeypatch.setattr(github, "command", lambda *args: {"args": args})
+    assert github.check_suite("owner/repo", 7)["args"] == ("api", "repos/owner/repo/check-suites/7")
 
 
 def test_api_errors_are_reported_instead_of_treated_as_missing_reviews(monkeypatch):
