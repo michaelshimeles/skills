@@ -91,7 +91,12 @@ def evaluate(attempt, current_head, checks, comments, reviews):
         old = old_comments.get(str(comment["id"]))
         if old and body == old.get("body"):
             continue
-        if confidence(body) is None or "too many files changed" in body.lower():
+        score = confidence(body)
+        skipped = "too many files changed" in body.lower()
+        # On the alternate route, an auto-review notice can precede the requested review.
+        if skipped and score is None and attempt.get("trigger") == "@greptile":
+            raise ReviewError("Greptile skipped the review: too many files changed; start a new attempt with --trigger @greptile-apps")
+        if score is None or skipped:
             continue
         commit = reviewed_commit(body)
         # A separate review cannot establish which revision this comment covers.
@@ -153,7 +158,7 @@ def start(github, repo, pr, trigger, output, bots):
         "-f", f"body={trigger} review",
     )
     attempt = {
-        "status": "triggered", "repo": repo, "pr": pr, "head": head,
+        "status": "triggered", "repo": repo, "pr": pr, "head": head, "trigger": trigger,
         "trigger_id": comment["id"], "triggered_at": comment["created_at"],
         "bots": list(bots), **snapshot,
     }

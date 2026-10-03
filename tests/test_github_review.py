@@ -35,7 +35,7 @@ def check(**overrides):
 
 def attempt(**overrides):
     return {
-        "status": "triggered", "repo": "owner/repo", "pr": 123, "head": HEAD,
+        "status": "triggered", "repo": "owner/repo", "pr": 123, "head": HEAD, "trigger": "@greptile",
         "triggered_at": TRIGGER, "bots": [BOT], "checks": [check()],
         "comments": [summary(updated_at=BEFORE)], "reviews": [], **overrides,
     }
@@ -128,6 +128,20 @@ def test_aborted_fresh_check_stops_the_attempt(conclusion):
         evaluate(checks=[check(id=2, started_at=AFTER, conclusion=conclusion)], comments=[summary(id=11)])
 
 
+def notice(**overrides):
+    body = "Too many files changed for review. (612 files found, 500 file limit)"
+    return {"id": 12, "user": {"login": BOT}, "updated_at": AFTER, "body": body, **overrides}
+
+
+def test_too_many_files_notice_stops_a_default_trigger_attempt():
+    with pytest.raises(REVIEW.ReviewError, match="--trigger @greptile-apps"):
+        evaluate(comments=[notice()])
+
+
+def test_too_many_files_notice_does_not_stop_the_alternate_trigger():
+    assert evaluate(state=attempt(trigger="@greptile-apps"), comments=[notice()])["status"] == "pending"
+
+
 def test_bot_identity_and_confidence_label_are_required():
     assert evaluate(comments=[summary(id=11, user={"login": "greptile-helper"})])["status"] == "pending"
     assert REVIEW.confidence("There were 5/5 tests passing") is None
@@ -183,6 +197,7 @@ def test_start_records_baseline_and_posts_the_selected_trigger_only_once(tmp_pat
     REVIEW.start(github, "owner/repo", 123, "@greptile-apps", path, [BOT])
     saved = json.loads(path.read_text())
     assert (saved["head"], saved["trigger_id"], saved["triggered_at"]) == (HEAD, 99, TRIGGER)
+    assert saved["trigger"] == "@greptile-apps"
     assert "body=@greptile-apps review" in github.posts[0]
     with pytest.raises(FileExistsError):
         REVIEW.start(github, "owner/repo", 123, "@greptile-apps", path, [BOT])

@@ -33,7 +33,10 @@ A fresh scored PR review can supply its own result. This also permits
 large-PR reviews that update a summary without creating a check run.
 
 A fresh running check keeps the attempt pending. A cancelled, skipped, stale,
-or timed-out check stops it. Review findings can accompany a failed check, so
+or timed-out check stops it. On the default trigger, a fresh "Too many files
+changed" notice also stops it; start a new attempt with `--trigger @greptile-apps`.
+The alternate route keeps waiting through that notice, because an automatic
+review can post it before the requested review finishes. Review findings can accompany a failed check, so
 read the score and body instead of equating check success with code correctness.
 The helper's `review_ready` result means fresh feedback is available; it does
 not certify that the PR is ready to merge.
