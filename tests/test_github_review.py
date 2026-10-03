@@ -143,6 +143,12 @@ def test_too_many_files_notice_does_not_stop_the_alternate_trigger():
     assert evaluate(state=attempt(trigger="@greptile-apps"), comments=[notice()])["status"] == "pending"
 
 
+def test_too_many_files_notice_does_not_discard_a_fresh_scored_review():
+    review = {"id": 2, "user": {"login": BOT}, "commit_id": HEAD, "submitted_at": AFTER, "body": "Confidence: 4/5"}
+    result = evaluate(comments=[notice()], reviews=[review])
+    assert (result["status"], result["score"], result["source"]) == ("review_ready", 4, "review")
+
+
 def test_bot_identity_and_confidence_label_are_required():
     assert evaluate(comments=[summary(id=11, user={"login": "greptile-helper"})])["status"] == "pending"
     assert REVIEW.confidence("There were 5/5 tests passing") is None
@@ -226,6 +232,12 @@ def test_start_posts_past_a_stuck_check_and_keeps_it_in_the_baseline(tmp_path):
     REVIEW.start(github, "owner/repo", 123, "@greptile", path, [BOT], stuck_after=1800, now=running_since(31))
     assert len(github.posts) == 1
     assert json.loads(path.read_text())["checks"] == [stuck]
+
+
+def test_start_posts_past_a_queued_check_without_a_start_time(tmp_path):
+    github = FakeGitHub([{"checks": [check(status="queued", started_at=None)], "comments": [], "reviews": []}])
+    REVIEW.start(github, "owner/repo", 123, "@greptile", tmp_path / "attempt.json", [BOT], now=running_since(0))
+    assert len(github.posts) == 1
 
 
 def test_start_does_not_post_if_head_changes_during_snapshot(tmp_path):

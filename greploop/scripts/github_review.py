@@ -83,6 +83,7 @@ def evaluate(attempt, current_head, checks, comments, reviews):
         if confidence(review.get("body") or "") is not None:
             candidates.append((review["submitted_at"], "review", review))
 
+    skipped_notice = False
     old_comments = {str(item["id"]): item for item in attempt["comments"]}
     for comment in comments:
         if comment.get("user", {}).get("login") not in bots:
@@ -95,9 +96,7 @@ def evaluate(attempt, current_head, checks, comments, reviews):
             continue
         score = confidence(body)
         skipped = "too many files changed" in body.lower()
-        # On the alternate route, an auto-review notice can precede the requested review.
-        if skipped and score is None and attempt.get("trigger") == "@greptile":
-            raise ReviewError("Greptile skipped the review: too many files changed; start a new attempt with --trigger @greptile-apps")
+        skipped_notice = skipped_notice or (skipped and score is None)
         if score is None or skipped:
             continue
         commit = reviewed_commit(body)
@@ -107,6 +106,9 @@ def evaluate(attempt, current_head, checks, comments, reviews):
         candidates.append((comment["updated_at"], "comment", comment))
 
     if not candidates:
+        # On the alternate route, an auto-review notice can precede the requested review.
+        if skipped_notice and attempt.get("trigger") == "@greptile":
+            raise ReviewError("Greptile skipped the review: too many files changed; start a new attempt with --trigger @greptile-apps")
         return {"status": "pending", "reason": "no fresh scored review tied to the current head"}
     updated, kind, result = max(candidates, key=lambda item: (item[0], item[2]["id"]))
     return {
@@ -144,9 +146,10 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-def started_before(check, cutoff):
+def stuck(check, cutoff):
     started = check.get("started_at")
-    return bool(started) and datetime.fromisoformat(started.replace("Z", "+00:00")) < cutoff
+    # GitHub allows a null start time, which cannot show that the check is active.
+    return not started or datetime.fromisoformat(started.replace("Z", "+00:00")) < cutoff
 
 
 def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECONDS, now=utc_now):
@@ -162,7 +165,7 @@ def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECON
             check for check in snapshot["checks"]
             if "greptile" in check.get("name", "").lower()
             and check.get("status") != "completed"
-            and not started_before(check, cutoff)
+            and not stuck(check, cutoff)
         ]
         if running:
             raise ReviewError(

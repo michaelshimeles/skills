@@ -24,7 +24,8 @@ same path. If it fails after posting, inspect the PR and saved state before
 retrying; use `wait` on a confirmed attempt instead of posting again.
 If a Greptile check is already running, start refuses to post another trigger;
 let that run finish, then rerun start. After `--stuck-after` seconds, 1800 by
-default, start treats a running check as stuck and posts anyway.
+default, start treats a running check as stuck and posts anyway. A check with
+no start time does not block a new trigger.
 
 `wait` is read-only. It paginates all result sources, verifies the head before
 and after reading, and rejects old completed checks and unchanged summaries.
@@ -36,7 +37,8 @@ large-PR reviews that update a summary without creating a check run.
 
 A fresh running check keeps the attempt pending. A cancelled, skipped, stale,
 or timed-out check stops it. On the default trigger, a fresh "Too many files
-changed" notice also stops it; start a new attempt with `--trigger @greptile-apps`.
+changed" notice with no fresh scored review also stops it; start a new attempt
+with `--trigger @greptile-apps`.
 The alternate route keeps waiting through that notice, because an automatic
 review can post it before the requested review finishes. Review findings can accompany a failed check, so
 read the score and body instead of equating check success with code correctness.
