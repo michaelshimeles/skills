@@ -18,8 +18,9 @@ def capture_environment(tmp_path):
     bin_dir.mkdir()
     npm = bin_dir / "npm"
     npm.write_text(f"#!{sys.executable}\n" + '''import json, os, pathlib, sys
-root = pathlib.Path(sys.argv[sys.argv.index('--prefix') + 1])
+root = pathlib.Path.cwd()
 assert sys.argv[1] == 'ci', 'Capture must install the committed dependency selection'
+assert '--prefix' not in sys.argv, 'npm 11.16 rejects ci --prefix for the committed lockfile'
 manifest = json.loads((root / 'package.json').read_text())
 lock = json.loads((root / 'package-lock.json').read_text())
 assert lock['packages']['node_modules/playwright']['version'] == manifest['dependencies']['playwright']

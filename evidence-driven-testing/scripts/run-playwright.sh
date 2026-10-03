@@ -16,6 +16,7 @@ trap 'rm -rf -- "$CAPTURE_DIR"' EXIT
 # ESM resolves imports beside the script, independently of the working directory.
 cp -- "$CAPTURE_SCRIPT" "$CAPTURE_DIR/record.mjs"
 cp -- "$SCRIPT_DIR/playwright/package.json" "$SCRIPT_DIR/playwright/package-lock.json" "$CAPTURE_DIR/"
-npm ci --prefix "$CAPTURE_DIR" --no-audit --no-fund --ignore-scripts >&2
+# npm 11.16 rejects this lockfile under `npm ci --prefix`; install from inside the directory.
+(cd -- "$CAPTURE_DIR" && npm ci --no-audit --no-fund --ignore-scripts) >&2
 "$CAPTURE_DIR/node_modules/.bin/playwright" install chromium >&2
 node "$CAPTURE_DIR/record.mjs" "$@"
