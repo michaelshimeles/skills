@@ -134,9 +134,6 @@ class GitHub:
     def head(self, repo, pr):
         return self.command("api", f"repos/{repo}/pulls/{pr}")["head"]["sha"]
 
-    def check_suite(self, repo, suite_id):
-        return self.command("api", f"repos/{repo}/check-suites/{suite_id}")
-
     def snapshot(self, repo, pr, head):
         return {
             "checks": self.pages(f"repos/{repo}/commits/{head}/check-runs?per_page=100&filter=all", "check_runs"),
@@ -149,13 +146,12 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-def last_activity(github, repo, check):
-    # GitHub allows a null start time; the check suite's last update then dates the check.
-    started = check.get("started_at") or github.check_suite(repo, check["check_suite"]["id"])["updated_at"]
-    return datetime.fromisoformat(started.replace("Z", "+00:00"))
+def started_before(check, cutoff):
+    started = check.get("started_at")
+    return bool(started) and datetime.fromisoformat(started.replace("Z", "+00:00")) < cutoff
 
 
-def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECONDS, now=utc_now):
+def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECONDS, ignored_checks=(), now=utc_now):
     # Reserve the path before posting so rerunning a command cannot post twice.
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x") as stream:
@@ -168,12 +164,16 @@ def start(github, repo, pr, trigger, output, bots, stuck_after=STUCK_CHECK_SECON
             check for check in snapshot["checks"]
             if "greptile" in check.get("name", "").lower()
             and check.get("status") != "completed"
-            and last_activity(github, repo, check) >= cutoff
+            and check["id"] not in ignored_checks
+            and not started_before(check, cutoff)
         ]
         if running:
+            check_id = running[0]["id"]
+            # GitHub allows a null start time, and check runs have no creation time to age them by.
             raise ReviewError(
-                f"Greptile check {running[0]['id']} is already running; let it finish before starting another. "
-                f"Checks running longer than {stuck_after}s are treated as stuck."
+                f"Greptile check {check_id} is already running; let it finish before starting another. "
+                f"Checks running longer than {stuck_after}s are treated as stuck. "
+                f"If this check has no start time and is confirmed stuck, pass --ignore-check {check_id}."
             )
         if github.head(repo, pr) != head:
             raise ReviewError("PR head changed before the trigger")
@@ -230,6 +230,8 @@ def main():
     begin.add_argument("--bot", action="append", help="exact trusted login; repeat for multiple bots")
     begin.add_argument("--stuck-after", type=positive, default=STUCK_CHECK_SECONDS,
                        help="seconds after which a running Greptile check no longer blocks a new trigger")
+    begin.add_argument("--ignore-check", type=positive, action="append", default=[],
+                       help="check run ID confirmed stuck; repeat for several")
     wait = commands.add_parser("wait", help="read results without posting another trigger")
     wait.add_argument("attempt", type=Path)
     wait.add_argument("--timeout", type=positive, default=600)
@@ -239,7 +241,8 @@ def main():
     try:
         if args.command == "start":
             result = start(
-                github, args.repo, args.pr, args.trigger, args.output, args.bot or DEFAULT_BOTS, args.stuck_after,
+                github, args.repo, args.pr, args.trigger, args.output, args.bot or DEFAULT_BOTS,
+                args.stuck_after, args.ignore_check,
             )
         else:
             result = wait_for_review(github, json.loads(args.attempt.read_text()), args.timeout, args.interval)

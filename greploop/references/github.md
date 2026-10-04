@@ -24,8 +24,9 @@ same path. If it fails after posting, inspect the PR and saved state before
 retrying; use `wait` on a confirmed attempt instead of posting again.
 If a Greptile check is already running, start refuses to post another trigger;
 let that run finish, then rerun start. After `--stuck-after` seconds, 1800 by
-default, start treats a running check as stuck and posts anyway. For a check
-with no start time, start measures from its check suite's last update instead.
+default, start treats a running check as stuck and posts anyway. A check with
+no start time never ages out. If you confirm it is stuck, pass the
+`--ignore-check ID` named in the error.
 
 `wait` is read-only. It paginates all result sources, verifies the head before
 and after reading, and rejects old completed checks and unchanged summaries.
