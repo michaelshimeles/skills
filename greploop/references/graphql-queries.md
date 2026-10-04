@@ -35,15 +35,7 @@ mutation {
 }
 ```
 
-## Fetch general PR comments edited in place (REST)
-
-General PR comments are issue comments. Greptile may update one summary comment repeatedly, so select by `updated_at` instead of `created_at`:
-
-```bash
-gh api --paginate "repos/{owner}/{repo}/issues/<PR_NUMBER>/comments?per_page=100" \
-  | jq -s 'add
-    | map(select(.user.login | test("greptile"; "i")))
-    | sort_by(.updated_at)
-    | last
-    | {author: .user.login, updated_at, body}'
-```
+For Greptile's summary comment, use the `body` returned by the review helper's
+`wait` command ([github.md](github.md)). The helper only accepts a summary that
+a trusted bot login updated after the trigger and that names the current head
+commit.
